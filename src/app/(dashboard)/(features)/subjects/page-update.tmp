@@ -1,0 +1,284 @@
+'use client'
+
+import { useState, useMemo } from 'react'
+import { Plus, Edit, Trash2, BookOpen, List, Grid3X3, Search, Settings2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { SubjectModal } from '@/components/subject-modal'
+import { 
+  useGetSubjectsQuery,
+  useCreateSubjectMutation,
+  useUpdateSubjectMutation,
+  useDeleteSubjectMutation,
+  type Subject,
+  type CreateSubjectRequest,
+  type UpdateSubjectRequest
+} from '@/store/api/subjectApi'
+import { useAuth } from '@/context/auth-context'
+import { toast } from '@/hooks/use-toast'
+import { getErrorMessage } from '@/utils/error-utils'
+import {
+  ColumnDef,
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+  getSortedRowModel,
+  SortingState,
+  getFilteredRowModel,
+  ColumnFiltersState,
+  getPaginationRowModel,
+  PaginationState,
+  VisibilityState,
+} from '@tanstack/react-table'
+
+type ViewMode = 'list' | 'grid'
+
+export default function SubjectsPage() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null)
+  const [deletingSubject, setDeletingSubject] = useState<Subject | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const [globalFilter, setGlobalFilter] = useState('')
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: 10,
+  })
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
+  
+  // API hooks - only call when authenticated
+  const { data: subjects = [], isLoading, error } = useGetSubjectsQuery(undefined, {
+    skip: !isAuthenticated || authLoading
+  })
+  const [createSubject, { isLoading: isCreating }] = useCreateSubjectMutation()
+  const [updateSubject, { isLoading: isUpdating }] = useUpdateSubjectMutation()
+  const [deleteSubject, { isLoading: isDeleting }] = useDeleteSubjectMutation()
+
+  // Column definitions for the table
+  const columns: ColumnDef<Subject>[] = useMemo(
+    () => [
+      {
+        accessorKey: 'name',
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+              className="h-8 px-2 lg:px-3"
+            >
+              Subject Name
+              {column.getIsSorted() === 'asc' ? ' ↑' : column.getIsSorted() === 'desc' ? ' ↓' : ''}
+            </Button>
+          )
+        },
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">{row.getValue('name')}</span>
+          </div>
+        ),
+        enableSorting: true,
+        enableHiding: false,
+      },
+      {
+        accessorKey: 'code',
+        header: ({ column }) => {
+          return (
+            <Button
+              variant="ghost"
+              onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+              className="h-8 px-2 lg:px-3"
+            >
+              Code
+              {column.getIsSorted() === 'asc' ? ' ↑' : column.getIsSorted() === 'desc' ? ' ↓' : ''}
+            </Button>
+          )
+        },
+        cell: ({ row }) => {
+          const code = row.getValue('code') as string
+          return code ? (
+            <Badge variant="outline" className="text-xs">
+              {code}
+            </Badge>
+          ) : (
+            <span className="text-sm text-muted-foreground">No code</span>
+          )
+        },
+        enableSorting: true,
+      },
+      
+      {
+        id: 'actions',
+        header: 'Actions',
+        cell: ({ row }) => {
+          const subject = row.original
+          return (
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="h-8 w-8 p-0">
+                    <Settings2 className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => handleEdit(subject)}>
+                    <Edit className="mr-2 h-4 w-4" />
+                    Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => handleDelete(subject)}
+                    className="text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )
+        },
+        enableSorting: false,
+        enableHiding: false,
+      },
+    ],
+    []
+  )
+
+  // Initialize the table
+  const table = useReactTable({
+    data: subjects,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    onGlobalFilterChange: setGlobalFilter,
+    onPaginationChange: setPagination,
+    onColumnVisibilityChange: setColumnVisibility,
+    state: {
+      sorting,
+      columnFilters,
+      globalFilter,
+      pagination,
+      columnVisibility,
+    },
+    initialState: {
+      pagination: {
+        pageSize: 10,
+      },
+    },
+  })
+
+  const handleCreate = () => {
+    setEditingSubject(null)
+    setIsModalOpen(true)
+  }
+
+  const handleEdit = (subject: Subject) => {
+    setEditingSubject(subject)
+    setIsModalOpen(true)
+  }
+
+  const handleDelete = (subject: Subject) => {
+    setDeletingSubject(subject)
+  }
+
+  const handleModalSubmit = async (data: CreateSubjectRequest | UpdateSubjectRequest) => {
+    try {
+      if (editingSubject) {
+        // Update existing subject
+        await updateSubject({
+          id: editingSubject._id,
+          data: {
+            name: data.name,
+            code: data.code,
+            description: data.description,
+          }
+        }).unwrap()
+        toast({
+          title: 'Success',
+          description: 'Subject updated successfully.',
+        })
+      } else {
+        // Create new subject
+        if (!('name' in data) || typeof data.name !== 'string') {
+          toast({ title: 'Error', description: 'Name is required.', variant: 'destructive' })
+          return
+        }
+        await createSubject({
+          name: data.name,
+          code: (data as CreateSubjectRequest).code ?? '',
+          description: (data as CreateSubjectRequest).description ?? '',
+        }).unwrap()
+        toast({
+          title: 'Success',
+          description: 'Subject created successfully.',
+        })
+      }
+      setIsModalOpen(false)
+      setEditingSubject(null)
+    } catch (error: unknown) {
+      console.error('Error saving subject:', error)
+      const errorMessage = getErrorMessage(error, 'Failed to save subject. Please try again.')
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deletingSubject) return
+
+    try {
+      await deleteSubject(deletingSubject._id).unwrap()
+      toast({
+        title: 'Success',
+        description: 'Subject deleted successfully.',
+      })
+      setDeletingSubject(null)
+    } catch (error: unknown) {
+      console.error('Error deleting subject:', error)
+      const errorMessage = getErrorMessage(error, 'Failed to delete subject. Please try again.')
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      })
+    }
+  }

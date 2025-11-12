@@ -1,0 +1,103 @@
+/* React-PDF TextLayer and AnnotationLayer Styles */
+
+/* TextLayer Styles - Required by react-pdf */
+.react-pdf__Page__textContent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 0.25;
+  line-height: 1.0;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+}
+
+.react-pdf__Page__textContent span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  font-size: 0;
+  line-height: 1;
+  letter-spacing: 0;
+  word-spacing: 0;
+}
+
+.react-pdf__Page__textContent span[data-is-whitespace] {
+  color: transparent;
+}
+
+.react-pdf__Page__textContent span[data-is-whitespace]::before {
+  content: attr(data-text);
+  color: transparent;
+}
+
+/* AnnotationLayer Styles */
+.react-pdf__Page__annotations {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.react-pdf__Page__annotation {
+  position: absolute;
+  pointer-events: auto;
+}
+
+/* TextLayer highlighting for search */
+.react-pdf__Page__textContent .highlight {
+  margin: -1px;
+  padding: 1px;
+  background-color: rgba(180, 0, 170, 0.25);
+  border-radius: 4px;
+}
+
+.react-pdf__Page__textContent .highlight.appended {
+  position: initial;
+}
+
+.react-pdf__Page__textContent .highlight.begin {
+  border-radius: 4px 0px 0px 4px;
+}
+
+.react-pdf__Page__textContent .highlight.end {
+  border-radius: 0px 4px 4px 0px;
+}
+
+.react-pdf__Page__textContent .highlight.middle {
+  border-radius: 0px;
+}
+
+.react-pdf__Page__textContent .highlight.selected {
+  background-color: rgba(0, 100, 0, 0.25);
+}
+
+/* Additional TextLayer support */
+.react-pdf__Page__textContent .textLayer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 0.25;
+  line-height: 1.0;
+}
+
+.react-pdf__Page__textContent .textLayer > span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}

@@ -1,0 +1,82 @@
+/* RRWeb Mouse Pointer Styles */
+.replayer-mouse {
+  position: absolute !important;
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 50% !important;
+  background: #ff0000 !important;
+  border: 2px solid #ffffff !important;
+  pointer-events: none !important;
+  z-index: 1000 !important;
+  transform: translate(-50%, -50%) !important;
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.5) !important;
+  transition: all 0.1s ease !important;
+}
+
+.replayer-mouse::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  width: 4px !important;
+  height: 4px !important;
+  background: #ffffff !important;
+  border-radius: 50% !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+.replayer-mouse-tail {
+  position: absolute !important;
+  pointer-events: none !important;
+  z-index: 999 !important;
+  stroke: #ff0000 !important;
+  stroke-width: 3 !important;
+  fill: none !important;
+  opacity: 0.8 !important;
+}
+
+.replayer-mouse-click {
+  position: absolute !important;
+  width: 30px !important;
+  height: 30px !important;
+  border: 3px solid #ff0000 !important;
+  border-radius: 50% !important;
+  pointer-events: none !important;
+  z-index: 1001 !important;
+  transform: translate(-50%, -50%) !important;
+  animation: mouseClickPulse 0.3s ease-out !important;
+}
+
+@keyframes mouseClickPulse {
+  0% {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0;
+  }
+}
+
+.replayer-wrapper {
+  background: transparent !important;
+}
+
+.replayer-mouse-move {
+  position: absolute !important;
+  width: 2px !important;
+  height: 2px !important;
+  background: #ff0000 !important;
+  border-radius: 50% !important;
+  pointer-events: none !important;
+  z-index: 998 !important;
+  opacity: 0.6 !important;
+}
+
+/* Ensure mouse events are visible over video */
+.replayer-mouse,
+.replayer-mouse-tail,
+.replayer-mouse-click,
+.replayer-mouse-move {
+  mix-blend-mode: normal !important;
+}
