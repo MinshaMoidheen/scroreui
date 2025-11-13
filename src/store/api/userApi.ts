@@ -5,7 +5,7 @@ export interface User {
   _id: string
   username: string
   email: string
-  role: 'admin' | 'user' | 'superadmin'
+  role: 'admin' | 'user' | 'superadmin' | 'teacher'
   createdAt?: string
   updatedAt?: string
 }
@@ -14,7 +14,7 @@ export interface CreateUserRequest {
   username: string
   email: string
   password: string
-  role?: 'admin' | 'user'
+  role?: 'admin' | 'user' | 'teacher'
 }
 
 export interface UpdateUserRequest {
@@ -80,7 +80,7 @@ export const userApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ['User'],
     }),
-    // Teacher-specific endpoints (users with role 'user')
+    // Teacher-specific endpoints (users with role 'teacher')
     getTeachers: builder.query<User[], void>({
       query: () => ({
         url: USER_URL,
@@ -88,7 +88,10 @@ export const userApi = baseApi.injectEndpoints({
         
       }),
       providesTags: ['User'],
-      transformResponse: (response: GetUsersResponse) => response.users,
+      transformResponse: (response: GetUsersResponse) => {
+        // Filter to only show users with role 'teacher'
+        return response.users.filter(user => user.role === 'teacher')
+      },
     }),
     createTeacher: builder.mutation<{ message: string; user: User }, Omit<CreateUserRequest, 'role'>>({
       query: (teacher) => ({
@@ -96,7 +99,7 @@ export const userApi = baseApi.injectEndpoints({
         method: 'POST',
         body: {
           ...teacher,
-          role: 'user' as const,
+          role: 'teacher' as const,
         },
       }),
       invalidatesTags: ['User'],

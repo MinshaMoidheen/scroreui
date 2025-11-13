@@ -51,7 +51,7 @@ export const authApi = baseApi.injectEndpoints({
     }),
     teacherLogin: builder.mutation<LoginResponse, TeacherLoginRequest>({
       query: (credentials) => ({
-        url: `${AUTH_URL}/login`,
+        url: `${AUTH_URL}/teacher-login`,
         method: 'POST',
         body: credentials,
       }),

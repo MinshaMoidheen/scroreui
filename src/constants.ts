@@ -1,4 +1,5 @@
 export const BASE_URL = 'http://localhost:5031'
+export const STREAMING_SERVER_URL = process.env.NEXT_PUBLIC_STREAMING_SERVER_URL || 'http://localhost:8000'
 
 export const AUTH_URL = '/api/v1/auth'
 export const COURSE_CLASS_URL = '/api/v1/course-classes'

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
-import { Calendar, Clock, Users, BookOpen, GraduationCap, UserCheck, Search, List, Grid3X3 } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
+import { Calendar, Clock, Users, BookOpen, GraduationCap, UserCheck, Search, List, Grid3X3, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -13,71 +14,24 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useGetMyMeetingsQuery } from '@/store/api/meetingApi'
+import { useGetMeetingsQuery } from '@/store/api/meetingApi'
 import { useAuth } from '@/context/auth-context'
 import { toast } from '@/hooks/use-toast'
 
 type ViewMode = 'list' | 'grid'
 
 export default function MyMeetingsPage() {
-  const { isAuthenticated, isLoading: authLoading, user } = useAuth()
+  const router = useRouter()
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [searchTerm, setSearchTerm] = useState('')
 
-  // Get teacher's class, section, and subject from localStorage
-  const teacherCourseClassId = useMemo(() => {
-    if (typeof window === 'undefined') return null
-    const stored = localStorage.getItem('courseclass')
-    if (!stored) return null
-    try {
-      const parsed = JSON.parse(stored)
-      return parsed._id || parsed.id || stored
-    } catch {
-      return stored
-    }
-  }, [])
+  const handleStartMeeting = (meetingId: string) => {
+    router.push(`/meeting/${meetingId}`)
+  }
 
-  const teacherSectionId = useMemo(() => {
-    if (typeof window === 'undefined') return null
-    const stored = localStorage.getItem('section')
-    if (!stored) return null
-    try {
-      const parsed = JSON.parse(stored)
-      return parsed._id || parsed.id || stored
-    } catch {
-      return stored
-    }
-  }, [])
-
-  const teacherSubjectId = useMemo(() => {
-    if (typeof window === 'undefined') return null
-    const stored = localStorage.getItem('subject')
-    if (!stored) return null
-    try {
-      const parsed = JSON.parse(stored)
-      return parsed._id || parsed.id || stored
-    } catch {
-      return stored
-    }
-  }, [])
-
-  // Build query parameters for filtering
-  const queryParams = useMemo(() => {
-    const params: { courseClass?: string; section?: string; subject?: string } = {}
-    if (teacherCourseClassId) {
-      params.courseClass = teacherCourseClassId
-    }
-    if (teacherSectionId) {
-      params.section = teacherSectionId
-    }
-    if (teacherSubjectId) {
-      params.subject = teacherSubjectId
-    }
-    return Object.keys(params).length > 0 ? params : undefined
-  }, [teacherCourseClassId, teacherSectionId, teacherSubjectId])
-
-  // Fetch meetings filtered by teacher's email, class, section, and subject
-  const { data: meetings = [], isLoading, error } = useGetMyMeetingsQuery(queryParams, {
+  // Fetch all meetings
+  const { data: meetings = [], isLoading, error } = useGetMeetingsQuery(undefined, {
     skip: !isAuthenticated || authLoading,
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
@@ -110,6 +64,7 @@ export default function MyMeetingsPage() {
             <TableHead>Subject</TableHead>
             <TableHead>Organizer</TableHead>
             <TableHead>Participants</TableHead>
+            <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -160,12 +115,22 @@ export default function MyMeetingsPage() {
                       <span className="text-muted-foreground">0</span>
                     )}
                   </TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      onClick={() => handleStartMeeting(meeting._id)}
+                      className="gap-2"
+                    >
+                      <Play className="h-4 w-4" />
+                      Start
+                    </Button>
+                  </TableCell>
                 </TableRow>
               )
             })
           ) : (
             <TableRow>
-              <TableCell colSpan={8} className="h-24 text-center">
+              <TableCell colSpan={9} className="h-24 text-center">
                 No meetings found.
               </TableCell>
             </TableRow>
@@ -272,7 +237,7 @@ export default function MyMeetingsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">My Meetings</h1>
           <p className="text-muted-foreground">
-            View meetings for your class, section, and subject
+            View all meetings and schedules
           </p>
         </div>
         <div className="flex items-center gap-4">

@@ -109,16 +109,13 @@ export function TeacherAuthForm({ className, ...props }: TeacherAuthFormProps) {
         subjectId: data.subjectId,
       }).unwrap()
 
-      // Block sign-in if the authenticated account is admin/superadmin
+      // Block sign-in if the authenticated account is not a teacher
       const role = result?.user?.role?.toLowerCase()
-      const access = result?.user?.access?.toLowerCase()
-      const isAdminRole = role === 'admin' || role === 'superadmin' || access === 'admin' || access === 'superadmin'
-      const isUserRole = role === 'user' || role === 'student' || access === 'user' || access === 'student'
-
-      if (isAdminRole) {
+      
+      if (role !== 'teacher') {
         toast({
-          title: 'Cannot sign in here',
-          description: "You can't sign in as teacher on the admin login.",
+          title: 'Access Denied',
+          description: 'Only users with teacher role can login here. Please use the appropriate login page.',
           variant: 'destructive',
         })
         return

@@ -109,13 +109,13 @@ export const getSidebarData = (): SidebarData => {
 
   // Filter menu items based on user role
   const getMenuItemsForRole = (role: string) => {
-    if (role === 'user') {
-      // For users (teachers), show My Folders and My Meetings
+    if (role === 'teacher') {
+      // For teachers, show only My Folders (userFolders) and My Meetings
       return allMenuItems.filter(item => 
        item.title === 'My Folders' || item.title === 'My Meetings'
       )
     } else {
-      // For admin and superadmin, show all items except My Folders and My Meetings
+      // For admin, superadmin, and other roles, show all items except My Folders and My Meetings
       return allMenuItems.filter(item => item.title !== 'My Folders' && item.title !== 'My Meetings')
     }
   }
