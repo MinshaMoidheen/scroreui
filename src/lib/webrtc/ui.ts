@@ -61,23 +61,36 @@ export function addScreenShare(stream: MediaStream, participantId: string) {
   const container = document.getElementById('screen-share-container')
   if (!container) return
 
+  // Find the inner div where video should be placed
+  const videoContainer = container.querySelector('div.relative') as HTMLElement
+  if (!videoContainer) return
+
   // Clear existing screen share
-  container.innerHTML = ''
+  videoContainer.innerHTML = ''
+
+  // Remove hidden class to make container visible
+  container.classList.remove('hidden')
 
   const video = document.createElement('video')
   video.id = `screen-${participantId}`
   video.srcObject = stream
   video.autoplay = true
   video.playsInline = true
-  video.className = 'w-full h-full object-contain rounded-lg'
+  video.className = 'w-full h-full object-contain'
 
-  container.appendChild(video)
+  videoContainer.appendChild(video)
 }
 
 export function removeScreenShare() {
   const container = document.getElementById('screen-share-container')
   if (container) {
-    container.innerHTML = ''
+    // Find the inner div and clear it
+    const videoContainer = container.querySelector('div.relative') as HTMLElement
+    if (videoContainer) {
+      videoContainer.innerHTML = ''
+    }
+    // Hide the container again
+    container.classList.add('hidden')
   }
 }
 

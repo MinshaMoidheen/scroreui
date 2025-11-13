@@ -273,7 +273,15 @@ export default function MeetingRoomPage() {
           <div id="videos-container" className="contents"></div>
 
           {/* Screen Share Container */}
-          <div id="screen-share-container" className="hidden"></div>
+          <Card id="screen-share-container" className="hidden bg-gray-800 border-gray-700">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Screen Share</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="relative w-full aspect-video bg-gray-900 rounded-lg overflow-hidden">
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Controls */}
