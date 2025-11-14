@@ -8,7 +8,6 @@ interface User {
   email: string
   role: string
   access: string
-  collaboratingCentreId?: string
   classsubject?: string
   section?: string
   subject?: string

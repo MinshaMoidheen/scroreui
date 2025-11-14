@@ -16,7 +16,6 @@ export interface LoginResponse {
     email: string
     role: string
     access: string
-    collaboratingCentreId?: string
   }
   accessToken: string
 }
