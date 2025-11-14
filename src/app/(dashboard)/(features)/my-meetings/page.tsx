@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useGetMeetingsQuery } from '@/store/api/meetingApi'
+import { useGetMyMeetingsQuery } from '@/store/api/meetingApi'
 import { useAuth } from '@/context/auth-context'
 import { toast } from '@/hooks/use-toast'
 
@@ -30,9 +30,25 @@ export default function MyMeetingsPage() {
     router.push(`/meeting/${meetingId}`)
   }
 
-  // Fetch all meetings
-  const { data: meetings = [], isLoading, error } = useGetMeetingsQuery(undefined, {
-    skip: !isAuthenticated || authLoading,
+  // Get teacher's assigned class, section, and subject from localStorage
+  const teacherCourseClassId = typeof window !== 'undefined' ? localStorage.getItem('courseclass') : null
+  const teacherSectionId = typeof window !== 'undefined' ? localStorage.getItem('section') : null
+  const teacherSubjectId = typeof window !== 'undefined' ? localStorage.getItem('subject') : null
+
+  // Build query params for meeting filtering
+  const meetingQueryParams = useMemo(() => {
+    if (!teacherCourseClassId || !teacherSectionId || !teacherSubjectId) return undefined
+    
+    return {
+      courseClass: teacherCourseClassId,
+      section: teacherSectionId,
+      subject: teacherSubjectId
+    }
+  }, [teacherCourseClassId, teacherSectionId, teacherSubjectId])
+
+  // Fetch meetings filtered by teacher's assigned class/section/subject and user participation
+  const { data: meetings = [], isLoading, error } = useGetMyMeetingsQuery(meetingQueryParams, {
+    skip: !isAuthenticated || authLoading || !teacherCourseClassId || !teacherSectionId || !teacherSubjectId,
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
   })
@@ -227,6 +243,18 @@ export default function MyMeetingsPage() {
         <Calendar className="mx-auto h-12 w-12 text-muted-foreground" />
         <h3 className="mt-2 text-sm font-semibold text-gray-900">Authentication Required</h3>
         <p className="mt-1 text-sm text-gray-500">Please log in to view your meetings.</p>
+      </div>
+    )
+  }
+
+  if (!teacherCourseClassId || !teacherSectionId || !teacherSubjectId) {
+    return (
+      <div className="text-center py-8">
+        <Calendar className="mx-auto h-12 w-12 text-muted-foreground" />
+        <h3 className="mt-2 text-sm font-semibold text-gray-900">Teacher Session Required</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          Please ensure you have selected a class, section, and subject to view your meetings.
+        </p>
       </div>
     )
   }
