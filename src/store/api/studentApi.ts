@@ -5,6 +5,7 @@ export interface Student {
   _id: string
   username: string
   rollNumber: string
+  role?: string
   courseClass: {
     _id: string
     name: string

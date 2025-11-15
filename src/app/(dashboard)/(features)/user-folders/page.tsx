@@ -1459,13 +1459,33 @@ export default function UserFoldersPage() {
     }
   }, [imageCurrentSession, toast, recordingImageInfo])
 
-  // Get teacher's assigned class, section, and subject from localStorage
-  const teacherCourseClassId = localStorage.getItem('courseclass')
-  const teacherSectionId = localStorage.getItem('section')
-  const teacherSubjectId = localStorage.getItem('subject')
+  // Get teacher's assigned class, section, and subject from localStorage (for teachers)
+  const teacherCourseClassId = typeof window !== 'undefined' ? localStorage.getItem('courseclass') : null
+  const teacherSectionId = typeof window !== 'undefined' ? localStorage.getItem('section') : null
+  const teacherSubjectId = typeof window !== 'undefined' ? localStorage.getItem('subject') : null
+  
+  // Get student's class and section from user object (for students)
+  const studentCourseClassId = user?.role === 'student' 
+    ? (typeof user.courseClass === 'object' ? user.courseClass._id : user.courseClass)
+    : null
+  const studentSectionId = user?.role === 'student'
+    ? (typeof user.section === 'object' ? user.section._id : user.section)
+    : null
   
   // Build query params for folder filtering
   const folderQueryParams = useMemo(() => {
+    // For students: filter by class and section only (no subject)
+    if (user?.role === 'student') {
+      if (!studentCourseClassId || !studentSectionId) return undefined
+      
+      return {
+        courseClass: studentCourseClassId,
+        section: studentSectionId
+        // No subject for students
+      }
+    }
+    
+    // For teachers: filter by class, section, and subject
     if (!teacherCourseClassId || !teacherSectionId || !teacherSubjectId) return undefined
     
     return {
@@ -1473,11 +1493,23 @@ export default function UserFoldersPage() {
       section: teacherSectionId,
       subject: teacherSubjectId
     }
-  }, [teacherCourseClassId, teacherSectionId, teacherSubjectId])
+  }, [user?.role, studentCourseClassId, studentSectionId, teacherCourseClassId, teacherSectionId, teacherSubjectId])
   
-  // API hooks - only get folders filtered by teacher's assigned class/section/subject
+  // Determine skip condition based on user role
+  const shouldSkipFolders = useMemo(() => {
+    if (!isAuthenticated || authLoading) return true
+    
+    if (user?.role === 'student') {
+      return !studentCourseClassId || !studentSectionId
+    }
+    
+    // For teachers
+    return !teacherCourseClassId || !teacherSectionId || !teacherSubjectId
+  }, [isAuthenticated, authLoading, user?.role, studentCourseClassId, studentSectionId, teacherCourseClassId, teacherSectionId, teacherSubjectId])
+  
+  // API hooks - get folders filtered by user's assigned class/section (and subject for teachers)
   const { data: folders = [], isLoading, error, refetch: refetchFolders } = useGetFoldersQuery(folderQueryParams, {
-    skip: !isAuthenticated || authLoading || !teacherCourseClassId || !teacherSectionId || !teacherSubjectId,
+    skip: shouldSkipFolders,
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
   })

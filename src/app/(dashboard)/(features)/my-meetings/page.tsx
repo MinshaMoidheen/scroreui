@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Calendar, Clock, Users, BookOpen, GraduationCap, UserCheck, Search, List, Grid3X3, Play } from 'lucide-react'
+import { Calendar, Clock, Users, BookOpen, GraduationCap, UserCheck, Search, List, Grid3X3, Play, LogIn } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -22,7 +22,7 @@ type ViewMode = 'list' | 'grid'
 
 export default function MyMeetingsPage() {
   const router = useRouter()
-  const { isAuthenticated, isLoading: authLoading } = useAuth()
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -30,13 +30,33 @@ export default function MyMeetingsPage() {
     router.push(`/meeting/${meetingId}`)
   }
 
-  // Get teacher's assigned class, section, and subject from localStorage
+  // Get teacher's assigned class, section, and subject from localStorage (for teachers)
   const teacherCourseClassId = typeof window !== 'undefined' ? localStorage.getItem('courseclass') : null
   const teacherSectionId = typeof window !== 'undefined' ? localStorage.getItem('section') : null
   const teacherSubjectId = typeof window !== 'undefined' ? localStorage.getItem('subject') : null
 
+  // Get student's class and section from user object (for students)
+  const studentCourseClassId = user?.role === 'student' 
+    ? (typeof user.courseClass === 'object' ? user.courseClass._id : user.courseClass)
+    : null
+  const studentSectionId = user?.role === 'student'
+    ? (typeof user.section === 'object' ? user.section._id : user.section)
+    : null
+
   // Build query params for meeting filtering
   const meetingQueryParams = useMemo(() => {
+    // For students: filter by class and section only (no subject)
+    if (user?.role === 'student') {
+      if (!studentCourseClassId || !studentSectionId) return undefined
+      
+      return {
+        courseClass: studentCourseClassId,
+        section: studentSectionId
+        // No subject for students
+      }
+    }
+    
+    // For teachers: filter by class, section, and subject
     if (!teacherCourseClassId || !teacherSectionId || !teacherSubjectId) return undefined
     
     return {
@@ -44,11 +64,23 @@ export default function MyMeetingsPage() {
       section: teacherSectionId,
       subject: teacherSubjectId
     }
-  }, [teacherCourseClassId, teacherSectionId, teacherSubjectId])
+  }, [user?.role, studentCourseClassId, studentSectionId, teacherCourseClassId, teacherSectionId, teacherSubjectId])
 
-  // Fetch meetings filtered by teacher's assigned class/section/subject and user participation
+  // Determine skip condition based on user role
+  const shouldSkipMeetings = useMemo(() => {
+    if (!isAuthenticated || authLoading) return true
+    
+    if (user?.role === 'student') {
+      return !studentCourseClassId || !studentSectionId
+    }
+    
+    // For teachers
+    return !teacherCourseClassId || !teacherSectionId || !teacherSubjectId
+  }, [isAuthenticated, authLoading, user?.role, studentCourseClassId, studentSectionId, teacherCourseClassId, teacherSectionId, teacherSubjectId])
+
+  // Fetch meetings filtered by user's assigned class/section (and subject for teachers) and user participation
   const { data: meetings = [], isLoading, error } = useGetMyMeetingsQuery(meetingQueryParams, {
-    skip: !isAuthenticated || authLoading || !teacherCourseClassId || !teacherSectionId || !teacherSubjectId,
+    skip: shouldSkipMeetings,
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
   })
@@ -78,8 +110,8 @@ export default function MyMeetingsPage() {
             <TableHead>Class</TableHead>
             <TableHead>Section</TableHead>
             <TableHead>Subject</TableHead>
-            <TableHead>Organizer</TableHead>
-            <TableHead>Participants</TableHead>
+            {/* <TableHead>Organizer</TableHead>
+            <TableHead>Participants</TableHead> */}
             <TableHead>Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -118,7 +150,7 @@ export default function MyMeetingsPage() {
                       <span className="text-muted-foreground">-</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  {/* <TableCell>
                     <div className="flex items-center gap-1">
                       <Users className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm">{meeting.organizer.username}</span>
@@ -130,15 +162,24 @@ export default function MyMeetingsPage() {
                     ) : (
                       <span className="text-muted-foreground">0</span>
                     )}
-                  </TableCell>
+                  </TableCell> */}
                   <TableCell>
                     <Button
                       size="sm"
                       onClick={() => handleStartMeeting(meeting._id)}
                       className="gap-2"
                     >
-                      <Play className="h-4 w-4" />
-                      Start
+                      {user?.role === 'student' ? (
+                        <>
+                          <LogIn className="h-4 w-4" />
+                          Join
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-4 w-4" />
+                          Start
+                        </>
+                      )}
                     </Button>
                   </TableCell>
                 </TableRow>

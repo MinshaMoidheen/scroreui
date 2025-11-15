@@ -70,7 +70,7 @@ export const getSidebarData = (): SidebarData => {
       icon: UserCheck,
     },
      {
-      title: 'Student Registration',
+      title: 'Student',
       url: '/student-registration',
       icon: UserPlus,
     },
@@ -138,7 +138,7 @@ export const getSidebarData = (): SidebarData => {
       return allMenuItems.filter(item => 
         item.title !== 'My Folders' && 
         item.title !== 'My Meetings' && 
-        item.title !== 'Student Registration'
+        item.title !== 'Student'
       )
     }
   }
