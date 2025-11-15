@@ -5,11 +5,20 @@ import { BASE_URL, TEACHERSESSION_URL } from '@/constants'
 
 interface User {
   username: string
-  email: string
+  email?: string
   role: string
-  access: string
+  access?: string
+  id?: string
+  rollNumber?: string
+  courseClass?: {
+    _id: string
+    name: string
+  } | string
+  section?: {
+    _id: string
+    name: string
+  } | string
   classsubject?: string
-  section?: string
   subject?: string
   loginTime?: string
   lastLogoutTime?: string

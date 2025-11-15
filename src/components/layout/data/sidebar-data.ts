@@ -2,7 +2,7 @@ import {
   IconHome,
   
 } from '@tabler/icons-react'
-import { AudioWaveform, Command, GalleryVerticalEnd, BookOpen, Users, GraduationCap, UserCheck, Download, FileText, Folder, Activity, Calendar, Video } from 'lucide-react'
+import { AudioWaveform, Command, GalleryVerticalEnd, BookOpen, Users, GraduationCap, UserCheck, Download, FileText, Folder, Activity, Calendar, Video, UserPlus } from 'lucide-react'
 import { type SidebarData } from '../types'
 
 // Function to get user data from localStorage
@@ -69,6 +69,11 @@ export const getSidebarData = (): SidebarData => {
       url: '/teachers',
       icon: UserCheck,
     },
+     {
+      title: 'Student Registration',
+      url: '/student-registration',
+      icon: UserPlus,
+    },
     
     {
       title: 'Folders',
@@ -96,7 +101,7 @@ export const getSidebarData = (): SidebarData => {
       icon: Calendar,
     },
     {
-      title: 'Screen Recordings',
+      title: 'Recordings',
       url: '/screen-recordings',
       icon: Video,
     },
@@ -110,18 +115,31 @@ export const getSidebarData = (): SidebarData => {
       url: '/logs',
       icon: FileText,
     },
+   
   ]
 
   // Filter menu items based on user role
   const getMenuItemsForRole = (role: string) => {
     if (role === 'teacher') {
-      // For teachers, show only My Folders (userFolders), My Meetings, and Screen Recordings
+      // For teachers, show only My Folders (userFolders), My Meetings, and Recordings
       return allMenuItems.filter(item => 
-       item.title === 'My Folders' || item.title === 'My Meetings' || item.title === 'Screen Recordings'
+       item.title === 'My Folders' || item.title === 'My Meetings' || item.title === 'Recordings'
       )
-    } else {
-      // For admin, superadmin, and other roles, show all items except My Folders and My Meetings
+    } else if (role === 'student') {
+      // For students, show limited items (similar to teachers for now)
+      return allMenuItems.filter(item => 
+        item.title === 'My Folders' || item.title === 'My Meetings' || item.title === 'Recordings'
+      )
+    } else if (role === 'superadmin') {
+      // For superadmin, show all items except My Folders and My Meetings, including Student Registration
       return allMenuItems.filter(item => item.title !== 'My Folders' && item.title !== 'My Meetings')
+    } else {
+      // For admin and other roles, show all items except My Folders, My Meetings, and Student Registration
+      return allMenuItems.filter(item => 
+        item.title !== 'My Folders' && 
+        item.title !== 'My Meetings' && 
+        item.title !== 'Student Registration'
+      )
     }
   }
 

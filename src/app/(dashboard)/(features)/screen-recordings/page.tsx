@@ -23,9 +23,10 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { useGetRecordingsBySectionQuery } from '@/store/api/recordingApi'
+import { useGetRecordingsBySectionQuery, type RecordedVideo } from '@/store/api/recordingApi'
 import { useGetSectionsQuery } from '@/store/api/sectionApi'
 import { useAuth } from '@/context/auth-context'
+import { STREAMING_SERVER_URL } from '@/constants'
 
 type ViewMode = 'list' | 'grid'
 
@@ -33,7 +34,7 @@ export default function ScreenRecordingsPage() {
   const { isAuthenticated, isLoading: authLoading, user } = useAuth()
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [searchTerm, setSearchTerm] = useState('')
-  const [selectedVideo, setSelectedVideo] = useState<string | null>(null)
+  const [selectedVideo, setSelectedVideo] = useState<RecordedVideo | null>(null)
   const [isVideoDialogOpen, setIsVideoDialogOpen] = useState(false)
   const [videoError, setVideoError] = useState<string | null>(null)
   const [selectedSectionId, setSelectedSectionId] = useState<string>('')
@@ -107,8 +108,8 @@ export default function ScreenRecordingsPage() {
     })
   }, [recordings, searchTerm])
 
-  const handlePlayVideo = (videoId: string) => {
-    setSelectedVideo(videoId)
+  const handlePlayVideo = (recording: RecordedVideo) => {
+    setSelectedVideo(recording)
     setVideoError(null)
     setIsVideoLoading(true)
     setIsVideoDialogOpen(true)
@@ -125,10 +126,10 @@ export default function ScreenRecordingsPage() {
         return
       }
       
-      const videoUrl = `/api/video-proxy/${selectedVideo}?token=${encodeURIComponent(token)}`
+      const videoUrl = getVideoUrl(selectedVideo.filename)
       
       console.log('Loading video:', {
-        videoId: selectedVideo,
+        filename: selectedVideo.filename,
         videoUrl: videoUrl,
         elementReady: !!video,
       })
@@ -227,11 +228,11 @@ export default function ScreenRecordingsPage() {
       
       testVideoUrl()
     }
-  }, [isVideoDialogOpen, selectedVideo])
+  }, [isVideoDialogOpen, selectedVideo?.filename])
 
   // Initialize Plyr player when dialog opens and video is ready (optional enhancement)
   useEffect(() => {
-    if (isVideoDialogOpen && selectedVideo && videoRef.current) {
+    if (isVideoDialogOpen && selectedVideo?.filename && videoRef.current) {
       // Small delay to ensure video element is in DOM
       const timer = setTimeout(() => {
         if (!videoRef.current) return
@@ -332,29 +333,23 @@ export default function ScreenRecordingsPage() {
         }
       }
     }
-  }, [isVideoDialogOpen, selectedVideo])
+  }, [isVideoDialogOpen, selectedVideo?.filename])
 
   const handleDownload = () => {
     if (!selectedVideo) return
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
-    if (!token) return
 
-    const downloadUrl = `/api/video-proxy/${selectedVideo}?token=${encodeURIComponent(token)}`
+    const downloadUrl = getVideoUrl(selectedVideo.filename)
     const link = document.createElement('a')
     link.href = downloadUrl
-    link.download = `recording-${selectedVideo}.webm`
+    link.download = selectedVideo.filename || `recording-${selectedVideo._id}.webm`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
   }
 
-  const getVideoUrl = (videoId: string) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
-    if (!token) return ''
-    
-    // Use the Next.js proxy route which forwards to /api/videos/stream/{video_id}
-    // The proxy handles authentication and CORS
-    return `/api/video-proxy/${videoId}?token=${encodeURIComponent(token)}`
+  const getVideoUrl = (filename: string) => {
+    // Use the direct streaming server URL with the filename
+    return `${STREAMING_SERVER_URL}/videos_recorded/${filename}`
   }
 
   // Check browser codec support
@@ -430,7 +425,7 @@ export default function ScreenRecordingsPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handlePlayVideo(recording._id)}
+                    onClick={() => handlePlayVideo(recording)}
                   >
                     <Play className="h-4 w-4 mr-2" />
                     Play
@@ -476,7 +471,7 @@ export default function ScreenRecordingsPage() {
                 </div>
                 <Button
                   className="w-full mt-4"
-                  onClick={() => handlePlayVideo(recording._id)}
+                  onClick={() => handlePlayVideo(recording)}
                 >
                   <Play className="h-4 w-4 mr-2" />
                   Play Recording
@@ -538,7 +533,7 @@ export default function ScreenRecordingsPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 space-y-6">
+    <div className="container mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Screen Recordings</h1>
@@ -655,7 +650,7 @@ export default function ScreenRecordingsPage() {
                   </div>
                 )}
                 <video
-                  key={selectedVideo} // Force recreation when video changes
+                  key={selectedVideo._id} // Force recreation when video changes
                   ref={videoRef}
                   className="w-full h-full"
                   controls
@@ -800,11 +795,11 @@ export default function ScreenRecordingsPage() {
                     setVideoError('Video loading stalled. Please check your network connection.')
                   }}
                 >
-                  <source src={getVideoUrl(selectedVideo)} type='video/webm; codecs="vp9,opus"' />
-                  <source src={getVideoUrl(selectedVideo)} type='video/webm; codecs="vp8,opus"' />
-                  <source src={getVideoUrl(selectedVideo)} type='video/webm; codecs="vp9,vorbis"' />
-                  <source src={getVideoUrl(selectedVideo)} type='video/webm; codecs="vp8,vorbis"' />
-                  <source src={getVideoUrl(selectedVideo)} type="video/webm" />
+                  <source src={getVideoUrl(selectedVideo.filename)} type='video/webm; codecs="vp9,opus"' />
+                  <source src={getVideoUrl(selectedVideo.filename)} type='video/webm; codecs="vp8,opus"' />
+                  <source src={getVideoUrl(selectedVideo.filename)} type='video/webm; codecs="vp9,vorbis"' />
+                  <source src={getVideoUrl(selectedVideo.filename)} type='video/webm; codecs="vp8,vorbis"' />
+                  <source src={getVideoUrl(selectedVideo.filename)} type="video/webm" />
                   Your browser does not support the video tag or the video format.
                 </video>
               </div>

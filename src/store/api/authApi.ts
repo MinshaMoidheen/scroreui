@@ -39,6 +39,32 @@ export interface TeacherLoginRequest {
   deviceId?: string
 }
 
+export interface StudentLoginRequest {
+  username: string
+  password: string
+  courseClass: string
+  section: string
+  rollNumber: string
+}
+
+export interface StudentLoginResponse {
+  user: {
+    id: string
+    username: string
+    rollNumber: string
+    courseClass: {
+      _id: string
+      name: string
+    }
+    section: {
+      _id: string
+      name: string
+    }
+    role: string
+  }
+  accessToken: string
+}
+
 export const authApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     login: builder.mutation<LoginResponse, LoginRequest>({
@@ -51,6 +77,13 @@ export const authApi = baseApi.injectEndpoints({
     teacherLogin: builder.mutation<LoginResponse, TeacherLoginRequest>({
       query: (credentials) => ({
         url: `${AUTH_URL}/teacher-login`,
+        method: 'POST',
+        body: credentials,
+      }),
+    }),
+    studentLogin: builder.mutation<StudentLoginResponse, StudentLoginRequest>({
+      query: (credentials) => ({
+        url: `${AUTH_URL}/student-login`,
         method: 'POST',
         body: credentials,
       }),
@@ -70,4 +103,10 @@ export const authApi = baseApi.injectEndpoints({
   }),
 })
 
-export const { useLoginMutation, useTeacherLoginMutation, useLogoutMutation, useLogoutUserMutation } = authApi
+export const { 
+  useLoginMutation, 
+  useTeacherLoginMutation, 
+  useStudentLoginMutation,
+  useLogoutMutation, 
+  useLogoutUserMutation 
+} = authApi

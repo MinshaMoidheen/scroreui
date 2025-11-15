@@ -122,6 +122,47 @@ export const userApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ['User'],
     }),
+    // Student-specific endpoints (users with role 'user')
+    getStudents: builder.query<User[], void>({
+      query: () => ({
+        url: USER_URL,
+        method: 'GET',
+      }),
+      providesTags: ['User'],
+      transformResponse: (response: GetUsersResponse) => {
+        // Filter to only show users with role 'user'
+        return response.users.filter(user => user.role === 'user')
+      },
+    }),
+    createStudent: builder.mutation<{ message: string; user: User }, Omit<CreateUserRequest, 'role'>>({
+      query: (student) => ({
+        url: USER_URL,
+        method: 'POST',
+        body: {
+          ...student,
+          role: 'user' as const,
+        },
+      }),
+      invalidatesTags: ['User'],
+    }),
+    updateStudent: builder.mutation<{ message: string; user: User }, { id: string; data: UpdateUserRequest }>({
+      query: ({ id, data }) => ({
+        url: `${USER_URL}/${id}`,
+        method: 'PUT',
+        body: data,
+      }),
+      invalidatesTags: (result, error, { id }) => [
+        { type: 'User', id },
+        'User',
+      ],
+    }),
+    deleteStudent: builder.mutation<{ message: string }, string>({
+      query: (id) => ({
+        url: `${USER_URL}/${id}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['User'],
+    }),
   }),
 })
 
@@ -135,4 +176,8 @@ export const {
   useCreateTeacherMutation,
   useUpdateTeacherMutation,
   useDeleteTeacherMutation,
+  useGetStudentsQuery,
+  useCreateStudentMutation,
+  useUpdateStudentMutation,
+  useDeleteStudentMutation,
 } = userApi

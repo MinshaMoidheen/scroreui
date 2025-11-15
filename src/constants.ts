@@ -10,6 +10,7 @@ export const FOLDER_URL = '/api/v1/folders'
 export const FILE_URL = '/api/v1/files'
 export const TEACHERSESSION_URL = '/api/v1/teacher-sessions'
 export const DASHBOARD_URL = '/api/v1/dashboard'
+export const STUDENT_URL = '/api/v1/students'
 
 export const PARTY_URL =  '/parties'
 

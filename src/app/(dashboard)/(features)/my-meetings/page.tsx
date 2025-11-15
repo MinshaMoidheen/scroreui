@@ -247,17 +247,17 @@ export default function MyMeetingsPage() {
     )
   }
 
-  if (!teacherCourseClassId || !teacherSectionId || !teacherSubjectId) {
-    return (
-      <div className="text-center py-8">
-        <Calendar className="mx-auto h-12 w-12 text-muted-foreground" />
-        <h3 className="mt-2 text-sm font-semibold text-gray-900">Teacher Session Required</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          Please ensure you have selected a class, section, and subject to view your meetings.
-        </p>
-      </div>
-    )
-  }
+  // if (!teacherCourseClassId || !teacherSectionId || !teacherSubjectId) {
+  //   return (
+  //     <div className="text-center py-8">
+  //       <Calendar className="mx-auto h-12 w-12 text-muted-foreground" />
+  //       <h3 className="mt-2 text-sm font-semibold text-gray-900">Teacher Session Required</h3>
+  //       <p className="mt-1 text-sm text-gray-500">
+  //         Please ensure you have selected a class, section, and subject to view your meetings.
+  //       </p>
+  //     </div>
+  //   )
+  // }
 
   return (
     <div className="space-y-6">
