@@ -1,4 +1,4 @@
-import { FOLDER_URL } from '@/constants'
+import { FOLDER_URL, STUDENT_URL } from '@/constants'
 import { baseApi } from './baseApi'
 
 export interface Folder {
@@ -114,6 +114,31 @@ export const folderApi = baseApi.injectEndpoints({
         { type: 'Folder', id: `SUBFOLDERS-${parentId}` }
       ],
     }),
+    // Student-specific endpoints
+    getStudentFolders: builder.query<Folder[], void>({
+      query: () => ({
+        url: `${STUDENT_URL}/folders`,
+        method: 'GET',
+      }),
+      providesTags: ['Folder'],
+    }),
+    getStudentSubfolders: builder.query<Folder[], string>({
+      query: (parentId) => ({
+        url: `${STUDENT_URL}/folders/subfolders/${parentId}`,
+        method: 'GET',
+      }),
+      providesTags: (result, error, parentId) => [
+        { type: 'Folder', id: 'LIST' },
+        { type: 'Folder', id: `SUBFOLDERS-${parentId}` }
+      ],
+    }),
+    getStudentFolderById: builder.query<Folder, string>({
+      query: (id) => ({
+        url: `${STUDENT_URL}/folders/${id}`,
+        method: 'GET',
+      }),
+      providesTags: (result, error, id) => [{ type: 'Folder', id }],
+    }),
   }),
 })
 
@@ -124,5 +149,8 @@ export const {
   useCreateFolderMutation,
   useUpdateFolderMutation,
   useDeleteFolderMutation,
+  useGetStudentFoldersQuery,
+  useGetStudentSubfoldersQuery,
+  useGetStudentFolderByIdQuery,
 } = folderApi
 

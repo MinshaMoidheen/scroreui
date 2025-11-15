@@ -46,6 +46,8 @@ import { useRrwebRecording } from '@/hooks/use-rrweb-recording'
 import { 
   useGetFoldersQuery,
   useGetSubfoldersQuery,
+  useGetStudentFoldersQuery,
+  useGetStudentSubfoldersQuery,
   Folder as FolderType,
 } from '@/store/api/folderApi'
 import {
@@ -102,9 +104,9 @@ export default function UserFoldersPage() {
     return null
   }, [])
   
-  // Fetch sections for current session
+  // Fetch sections for current session (only for teachers, not students)
   const { data: sectionsData, isLoading: isSectionsLoading } = useGetSectionsBySessionQuery(sessionId || '', {
-    skip: !sessionId,
+    skip: !sessionId || user?.role === 'student',
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
   })
@@ -1508,20 +1510,46 @@ export default function UserFoldersPage() {
   }, [isAuthenticated, authLoading, user?.role, studentCourseClassId, studentSectionId, teacherCourseClassId, teacherSectionId, teacherSubjectId])
   
   // API hooks - get folders filtered by user's assigned class/section (and subject for teachers)
-  const { data: folders = [], isLoading, error, refetch: refetchFolders } = useGetFoldersQuery(folderQueryParams, {
-    skip: shouldSkipFolders,
+  // Use student-specific endpoints for students, regular endpoints for teachers
+  const isStudent = user?.role === 'student'
+  
+  const { data: teacherFolders = [], isLoading: isLoadingTeacherFolders, error: teacherFoldersError, refetch: refetchTeacherFolders } = useGetFoldersQuery(folderQueryParams, {
+    skip: shouldSkipFolders || isStudent,
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
   })
+  
+  const { data: studentFolders = [], isLoading: isLoadingStudentFolders, error: studentFoldersError, refetch: refetchStudentFolders } = useGetStudentFoldersQuery(undefined, {
+    skip: shouldSkipFolders || !isStudent,
+    refetchOnMountOrArgChange: true,
+    refetchOnFocus: true,
+  })
+  
+  // Combine folders based on role
+  const folders = isStudent ? studentFolders : teacherFolders
+  const isLoading = isStudent ? isLoadingStudentFolders : isLoadingTeacherFolders
+  const error = isStudent ? studentFoldersError : teacherFoldersError
+  const refetchFolders = isStudent ? refetchStudentFolders : refetchTeacherFolders
   
   // console.log('Folder query params:', folderQueryParams)
   // console.log('folders data:', folders);
   
-  const { data: subfolders = [], isLoading: isLoadingSubfolders, refetch: refetchSubfolders } = useGetSubfoldersQuery(selectedFolder!, {
-    skip: !isAuthenticated || authLoading || !selectedFolder,
+  const { data: teacherSubfolders = [], isLoading: isLoadingTeacherSubfolders, refetch: refetchTeacherSubfolders } = useGetSubfoldersQuery(selectedFolder!, {
+    skip: !isAuthenticated || authLoading || !selectedFolder || isStudent,
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
   })
+  
+  const { data: studentSubfolders = [], isLoading: isLoadingStudentSubfolders, refetch: refetchStudentSubfolders } = useGetStudentSubfoldersQuery(selectedFolder!, {
+    skip: !isAuthenticated || authLoading || !selectedFolder || !isStudent,
+    refetchOnMountOrArgChange: true,
+    refetchOnFocus: true,
+  })
+  
+  // Combine subfolders based on role
+  const subfolders = isStudent ? studentSubfolders : teacherSubfolders
+  const isLoadingSubfolders = isStudent ? isLoadingStudentSubfolders : isLoadingTeacherSubfolders
+  const refetchSubfolders = isStudent ? refetchStudentSubfolders : refetchTeacherSubfolders
 
   // File API hooks
   const { data: folderFiles = [], isLoading: isLoadingFolderFiles } = useGetFilesByFolderQuery(selectedFolder!, {

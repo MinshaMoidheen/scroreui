@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { useGetMyMeetingsQuery } from '@/store/api/meetingApi'
+import { useGetMyMeetingsQuery, useGetStudentMeetingsQuery } from '@/store/api/meetingApi'
 import { useAuth } from '@/context/auth-context'
 import { toast } from '@/hooks/use-toast'
 
@@ -79,11 +79,25 @@ export default function MyMeetingsPage() {
   }, [isAuthenticated, authLoading, user?.role, studentCourseClassId, studentSectionId, teacherCourseClassId, teacherSectionId, teacherSubjectId])
 
   // Fetch meetings filtered by user's assigned class/section (and subject for teachers) and user participation
-  const { data: meetings = [], isLoading, error } = useGetMyMeetingsQuery(meetingQueryParams, {
-    skip: shouldSkipMeetings,
+  // Use student-specific endpoints for students, regular endpoints for teachers
+  const isStudent = user?.role === 'student'
+  
+  const { data: teacherMeetings = [], isLoading: isLoadingTeacherMeetings, error: teacherMeetingsError } = useGetMyMeetingsQuery(meetingQueryParams, {
+    skip: shouldSkipMeetings || isStudent,
     refetchOnMountOrArgChange: true,
     refetchOnFocus: true,
   })
+  
+  const { data: studentMeetings = [], isLoading: isLoadingStudentMeetings, error: studentMeetingsError } = useGetStudentMeetingsQuery(undefined, {
+    skip: shouldSkipMeetings || !isStudent,
+    refetchOnMountOrArgChange: true,
+    refetchOnFocus: true,
+  })
+  
+  // Combine meetings based on role
+  const meetings = isStudent ? studentMeetings : teacherMeetings
+  const isLoading = isStudent ? isLoadingStudentMeetings : isLoadingTeacherMeetings
+  const error = isStudent ? studentMeetingsError : teacherMeetingsError
 
   // Filter meetings by search term
   const filteredMeetings = useMemo(() => {

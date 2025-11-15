@@ -1,4 +1,5 @@
 import { baseApi } from './baseApi'
+import { STUDENT_URL } from '@/constants'
 
 const MEETING_URL = '/api/v1/meetings'
 
@@ -116,6 +117,21 @@ export const meetingApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ['Meeting'],
     }),
+    // Student-specific endpoints
+    getStudentMeetings: builder.query<Meeting[], void>({
+      query: () => ({
+        url: `${STUDENT_URL}/meetings`,
+        method: 'GET',
+      }),
+      providesTags: ['Meeting'],
+    }),
+    getStudentMeetingById: builder.query<Meeting, string>({
+      query: (id) => ({
+        url: `${STUDENT_URL}/meetings/${id}`,
+        method: 'GET',
+      }),
+      providesTags: (result, error, id) => [{ type: 'Meeting', id }],
+    }),
   }),
 })
 
@@ -126,5 +142,7 @@ export const {
   useCreateMeetingMutation,
   useUpdateMeetingMutation,
   useDeleteMeetingMutation,
+  useGetStudentMeetingsQuery,
+  useGetStudentMeetingByIdQuery,
 } = meetingApi
 
