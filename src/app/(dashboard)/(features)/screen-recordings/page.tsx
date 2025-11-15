@@ -1,7 +1,9 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
-import { Video, Search, List, Grid3X3, Play, Calendar, Clock, FileVideo } from 'lucide-react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { Video, Search, List, Grid3X3, Play, Calendar, Clock, FileVideo, Download } from 'lucide-react'
+import Plyr from 'plyr'
+import 'plyr/dist/plyr.css'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -33,7 +35,11 @@ export default function ScreenRecordingsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null)
   const [isVideoDialogOpen, setIsVideoDialogOpen] = useState(false)
+  const [videoError, setVideoError] = useState<string | null>(null)
   const [selectedSectionId, setSelectedSectionId] = useState<string>('')
+  const [isVideoLoading, setIsVideoLoading] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const playerRef = useRef<Plyr | null>(null)
 
   // Get user role
   const userRole = useMemo(() => {
@@ -103,15 +109,272 @@ export default function ScreenRecordingsPage() {
 
   const handlePlayVideo = (videoId: string) => {
     setSelectedVideo(videoId)
+    setVideoError(null)
+    setIsVideoLoading(true)
     setIsVideoDialogOpen(true)
+  }
+
+  // Force video to load when dialog opens and test URL accessibility
+  useEffect(() => {
+    if (isVideoDialogOpen && selectedVideo && videoRef.current) {
+      const video = videoRef.current
+      const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+      if (!token) {
+        console.error('No access token available')
+        setVideoError('Authentication token not found. Please log in again.')
+        return
+      }
+      
+      const videoUrl = `/api/video-proxy/${selectedVideo}?token=${encodeURIComponent(token)}`
+      
+      console.log('Loading video:', {
+        videoId: selectedVideo,
+        videoUrl: videoUrl,
+        elementReady: !!video,
+      })
+      
+      // Test if the video URL is accessible before setting it
+      const testVideoUrl = async () => {
+        try {
+          setIsVideoLoading(true)
+          
+          // First, try a HEAD request to check if video exists
+          const headResponse = await fetch(videoUrl, {
+            method: 'HEAD',
+            headers: {
+              'Range': 'bytes=0-1',
+            },
+          })
+          
+          console.log('Video URL HEAD test response:', {
+            status: headResponse.status,
+            statusText: headResponse.statusText,
+            contentType: headResponse.headers.get('content-type'),
+            contentLength: headResponse.headers.get('content-length'),
+            acceptRanges: headResponse.headers.get('accept-ranges'),
+          })
+          
+          if (!headResponse.ok) {
+            // If HEAD fails, try GET to see the actual error
+            const getResponse = await fetch(videoUrl, {
+              method: 'GET',
+              headers: {
+                'Range': 'bytes=0-1023', // Get first 1KB to test
+              },
+            })
+            
+            if (!getResponse.ok) {
+              const errorText = await getResponse.text().catch(() => 'Unknown error')
+              let errorData
+              try {
+                errorData = JSON.parse(errorText)
+              } catch {
+                errorData = { detail: errorText }
+              }
+              
+              console.error('Video URL test failed:', getResponse.status, errorData)
+              
+              if (getResponse.status === 404) {
+                setVideoError('Video file not found on server. The recording may not have been saved properly.')
+              } else if (getResponse.status === 401 || getResponse.status === 403) {
+                setVideoError('Authentication failed. Please log in again.')
+              } else if (getResponse.status === 422) {
+                // Unprocessable Entity - usually means empty file
+                const errorMsg = errorData?.detail?.message || errorData?.detail || 'Video file is empty or incomplete.'
+                setVideoError(`Video recording issue: ${errorMsg}. The recording may not have completed properly. Please try recording again.`)
+              } else {
+                setVideoError(`Cannot access video: ${getResponse.status} ${getResponse.statusText}. ${errorData?.detail?.message || errorData?.detail || ''}`)
+              }
+              setIsVideoLoading(false)
+              return
+            }
+          }
+          
+          const contentType = headResponse.headers.get('content-type')
+          const contentLength = headResponse.headers.get('content-length')
+          
+          console.log('Video file info:', {
+            contentType,
+            contentLength: contentLength ? `${(parseInt(contentLength) / 1024 / 1024).toFixed(2)} MB` : 'unknown',
+          })
+          
+          if (contentType && !contentType.includes('video')) {
+            console.warn('Unexpected content type:', contentType)
+            setVideoError(`Unexpected content type: ${contentType}. Expected video/webm.`)
+            setIsVideoLoading(false)
+            return
+          }
+          
+          if (contentLength && parseInt(contentLength) === 0) {
+            setVideoError('Video file is empty (0 bytes). The recording may not have completed properly.')
+            setIsVideoLoading(false)
+            return
+          }
+          
+          // URL is accessible and valid, trigger video load
+          console.log('Video URL is accessible, video should load automatically via source elements')
+          // The source elements in JSX will handle the loading
+          // Just ensure video element is ready
+          if (video.readyState === 0) {
+            video.load() // Force reload if not already loading
+          }
+        } catch (error: any) {
+          console.error('Error testing video URL:', error)
+          setVideoError(`Cannot access video: ${error.message || 'Network error'}. Please check your connection and try again.`)
+          setIsVideoLoading(false)
+        }
+      }
+      
+      testVideoUrl()
+    }
+  }, [isVideoDialogOpen, selectedVideo])
+
+  // Initialize Plyr player when dialog opens and video is ready (optional enhancement)
+  useEffect(() => {
+    if (isVideoDialogOpen && selectedVideo && videoRef.current) {
+      // Small delay to ensure video element is in DOM
+      const timer = setTimeout(() => {
+        if (!videoRef.current) return
+
+        // Clean up previous player
+        if (playerRef.current) {
+          try {
+            playerRef.current.destroy()
+          } catch (e) {
+            console.warn('Error destroying previous player:', e)
+          }
+          playerRef.current = null
+        }
+
+        // Wait for video element to be ready
+        const initPlayer = () => {
+          if (!videoRef.current) return
+
+          try {
+            const player = new Plyr(videoRef.current, {
+              controls: [
+                'play-large',
+                'restart',
+                'rewind',
+                'play',
+                'fast-forward',
+                'progress',
+                'current-time',
+                'duration',
+                'mute',
+                'volume',
+                'settings',
+                'pip',
+                'airplay',
+                'fullscreen',
+              ],
+              settings: ['speed'],
+              keyboard: { focused: true, global: false },
+              tooltips: { controls: true, seek: true },
+              autoplay: false,
+              clickToPlay: true,
+            })
+
+            playerRef.current = player
+
+            // Handle player events
+            player.on('ready', () => {
+              console.log('Plyr player ready')
+            })
+
+            player.on('play', () => {
+              console.log('Video playing')
+              setVideoError(null)
+            })
+
+            player.on('error', (event) => {
+              console.error('Plyr player error:', event)
+              const error = (event as any).detail
+              if (error) {
+                setVideoError(`Video playback error: ${error.message || 'Unknown error'}. You can download the video to play it locally.`)
+              } else {
+                setVideoError('Video playback error. You can download the video to play it locally.')
+              }
+            })
+
+            player.on('loadedmetadata', () => {
+              console.log('Video metadata loaded in Plyr')
+              setVideoError(null)
+            })
+          } catch (error) {
+            console.error('Error initializing Plyr:', error)
+            // If Plyr fails, video element will still work with native controls
+          }
+        }
+
+        // Initialize immediately if video is already loaded, otherwise wait
+        if (videoRef.current.readyState >= 1) {
+          initPlayer()
+        } else {
+          const handleLoadedMetadata = () => {
+            initPlayer()
+            videoRef.current?.removeEventListener('loadedmetadata', handleLoadedMetadata)
+          }
+          videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata)
+        }
+      }, 100)
+
+      // Cleanup on unmount
+      return () => {
+        clearTimeout(timer)
+        if (playerRef.current) {
+          try {
+            playerRef.current.destroy()
+          } catch (e) {
+            console.warn('Error destroying player on cleanup:', e)
+          }
+          playerRef.current = null
+        }
+      }
+    }
+  }, [isVideoDialogOpen, selectedVideo])
+
+  const handleDownload = () => {
+    if (!selectedVideo) return
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+    if (!token) return
+
+    const downloadUrl = `/api/video-proxy/${selectedVideo}?token=${encodeURIComponent(token)}`
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = `recording-${selectedVideo}.webm`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
   const getVideoUrl = (videoId: string) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
     if (!token) return ''
     
-    // Use the Next.js proxy route for video streaming
+    // Use the Next.js proxy route which forwards to /api/videos/stream/{video_id}
+    // The proxy handles authentication and CORS
     return `/api/video-proxy/${videoId}?token=${encodeURIComponent(token)}`
+  }
+
+  // Check browser codec support
+  const checkCodecSupport = () => {
+    if (typeof window === 'undefined' || !videoRef.current) return false
+    
+    const video = videoRef.current
+    const canPlayVP9 = video.canPlayType('video/webm; codecs="vp9,opus"')
+    const canPlayVP8 = video.canPlayType('video/webm; codecs="vp8,opus"')
+    const canPlayWebM = video.canPlayType('video/webm')
+    
+    console.log('Codec support check:', {
+      vp9: canPlayVP9,
+      vp8: canPlayVP8,
+      webm: canPlayWebM,
+    })
+    
+    return canPlayVP9 === 'probably' || canPlayVP9 === 'maybe' || 
+           canPlayVP8 === 'probably' || canPlayVP8 === 'maybe' ||
+           canPlayWebM === 'probably' || canPlayWebM === 'maybe'
   }
 
   const formatDate = (dateString: string) => {
@@ -381,14 +644,186 @@ export default function ScreenRecordingsPage() {
             <DialogTitle>Video Recording</DialogTitle>
           </DialogHeader>
           {selectedVideo && (
-            <div className="mt-4">
-              <video
-                controls
-                className="w-full rounded-lg"
-                src={getVideoUrl(selectedVideo)}
-              >
-                Your browser does not support the video tag.
-              </video>
+            <div className="mt-4 space-y-4">
+              <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: '400px' }}>
+                {isVideoLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto"></div>
+                      <p className="mt-2 text-sm text-white">Loading video...</p>
+                    </div>
+                  </div>
+                )}
+                <video
+                  key={selectedVideo} // Force recreation when video changes
+                  ref={videoRef}
+                  className="w-full h-full"
+                  controls
+                  preload="auto"
+                  playsInline
+                  style={{ display: 'block', width: '100%', height: 'auto', minHeight: '400px' }}
+                  onError={(e) => {
+                    const video = e.currentTarget
+                    setIsVideoLoading(false)
+                    
+                    // Safely extract error information
+                    const errorCode = video.error?.code ?? null
+                    const errorMessage = video.error?.message ?? null
+                    const networkState = video.networkState ?? null
+                    const readyState = video.readyState ?? null
+                    
+                    const errorDetails = {
+                      error: video.error,
+                      errorCode,
+                      errorMessage,
+                      networkState,
+                      readyState,
+                      src: video.src,
+                      currentSrc: video.currentSrc,
+                      paused: video.paused,
+                      ended: video.ended,
+                      networkStateText: networkState === 0 ? 'EMPTY' : 
+                                       networkState === 1 ? 'IDLE' :
+                                       networkState === 2 ? 'LOADING' :
+                                       networkState === 3 ? 'NO_SOURCE' : 'UNKNOWN',
+                      readyStateText: readyState === 0 ? 'HAVE_NOTHING' :
+                                     readyState === 1 ? 'HAVE_METADATA' :
+                                     readyState === 2 ? 'HAVE_CURRENT_DATA' :
+                                     readyState === 3 ? 'HAVE_FUTURE_DATA' :
+                                     readyState === 4 ? 'HAVE_ENOUGH_DATA' : 'UNKNOWN',
+                    }
+                    console.error('Video playback error:', errorDetails)
+                    
+                    // Check codec support
+                    const codecSupported = checkCodecSupport()
+                    
+                    // Set error message for display
+                    let errorMsg = 'Unable to load video. You can download it to play locally.'
+                    
+                    if (video.error && errorCode !== null) {
+                      if (errorCode === 4) {
+                        // MEDIA_ERR_SRC_NOT_SUPPORTED
+                        if (networkState === 2) {
+                          errorMsg = 'Video is loading but format may not be supported. Please wait or try downloading the video.'
+                        } else if (!codecSupported) {
+                          errorMsg = 'Your browser does not support VP9/VP8 codecs used in this WebM video. Please try Chrome, Firefox, or Edge browser, or download the video to play it with VLC media player.'
+                        } else {
+                          errorMsg = 'Video format not supported. The video may be corrupted, incomplete, or still being processed. Try downloading the video to play it locally, or wait a moment and try again.'
+                        }
+                      } else if (errorCode === 2) {
+                        // MEDIA_ERR_NETWORK
+                        errorMsg = 'Network error while loading video. Please check your connection and try again.'
+                      } else if (errorCode === 3) {
+                        // MEDIA_ERR_DECODE
+                        errorMsg = 'Video decoding error. The video file may be corrupted or the codec is not supported. Try downloading the video to play it locally.'
+                      } else if (errorCode === 1) {
+                        // MEDIA_ERR_ABORTED
+                        errorMsg = 'Video loading was aborted. Please try again.'
+                      } else if (errorMessage) {
+                        errorMsg = `Video error: ${errorMessage}. You can download the video to play it locally.`
+                      } else {
+                        errorMsg = `Video playback error (code: ${errorCode}). The video may be corrupted or not fully loaded. Try downloading the video to play it locally.`
+                      }
+                    } else if (networkState === 3) {
+                      // NETWORK_NO_SOURCE
+                      errorMsg = 'No video source available. Please check if the video file exists on the server.'
+                    } else if (readyState === 0) {
+                      // HAVE_NOTHING
+                      errorMsg = 'Video has no data. The file may be empty or not accessible. Please check if the recording completed successfully.'
+                    } else if (networkState === 2) {
+                      // NETWORK_LOADING
+                      errorMsg = 'Video is still loading. Please wait a moment.'
+                    } else {
+                      // Unknown error - provide generic message
+                      errorMsg = 'Video playback error occurred. The video may be corrupted, incomplete, or your browser may not support the format. Try downloading the video to play it locally.'
+                    }
+                    
+                    setVideoError(errorMsg)
+                  }}
+                  onLoadStart={() => {
+                    console.log('Video load started', {
+                      src: videoRef.current?.src,
+                      currentSrc: videoRef.current?.currentSrc,
+                    })
+                    setIsVideoLoading(true)
+                    setVideoError(null)
+                  }}
+                  onLoadedMetadata={() => {
+                    const video = videoRef.current
+                    console.log('Video metadata loaded', {
+                      duration: video?.duration,
+                      videoWidth: video?.videoWidth,
+                      videoHeight: video?.videoHeight,
+                      readyState: video?.readyState,
+                      networkState: video?.networkState,
+                      currentSrc: video?.currentSrc,
+                    })
+                    setIsVideoLoading(false)
+                    setVideoError(null)
+                    
+                    // Check if video can actually play
+                    if (video) {
+                      const canPlay = video.readyState >= 2 // HAVE_CURRENT_DATA
+                      if (!canPlay) {
+                        console.warn('Video metadata loaded but may not be playable')
+                      }
+                    }
+                  }}
+                  onCanPlay={() => {
+                    console.log('Video can start playing')
+                    setIsVideoLoading(false)
+                    setVideoError(null)
+                  }}
+                  onCanPlayThrough={() => {
+                    console.log('Video can play through without buffering')
+                    setIsVideoLoading(false)
+                    setVideoError(null)
+                  }}
+                  onLoadedData={() => {
+                    console.log('Video data loaded')
+                    setIsVideoLoading(false)
+                  }}
+                  onProgress={() => {
+                    const video = videoRef.current
+                    if (video && video.buffered.length > 0) {
+                      const bufferedEnd = video.buffered.end(video.buffered.length - 1)
+                      const duration = video.duration
+                      const percent = duration > 0 ? (bufferedEnd / duration) * 100 : 0
+                      console.log(`Video buffered: ${percent.toFixed(1)}%`)
+                    }
+                  }}
+                  onWaiting={() => {
+                    console.log('Video waiting for data')
+                  }}
+                  onStalled={() => {
+                    console.warn('Video stalled - network issue')
+                    setVideoError('Video loading stalled. Please check your network connection.')
+                  }}
+                >
+                  <source src={getVideoUrl(selectedVideo)} type='video/webm; codecs="vp9,opus"' />
+                  <source src={getVideoUrl(selectedVideo)} type='video/webm; codecs="vp8,opus"' />
+                  <source src={getVideoUrl(selectedVideo)} type='video/webm; codecs="vp9,vorbis"' />
+                  <source src={getVideoUrl(selectedVideo)} type='video/webm; codecs="vp8,vorbis"' />
+                  <source src={getVideoUrl(selectedVideo)} type="video/webm" />
+                  Your browser does not support the video tag or the video format.
+                </video>
+              </div>
+              
+              <div className="flex items-center justify-between gap-4">
+                <Button
+                  variant="outline"
+                  onClick={handleDownload}
+                  className="flex items-center gap-2"
+                >
+                  <Download className="h-4 w-4" />
+                  Download Video
+                </Button>
+                {videoError && (
+                  <div className="flex-1 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <p className="text-sm text-yellow-800">{videoError}</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>
