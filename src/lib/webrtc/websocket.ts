@@ -4,9 +4,18 @@ import { STREAMING_SERVER_URL } from '@/constants'
 let ws: WebSocket | null = null
 let messageHandlers: ((message: any) => void)[] = []
 
-export function connectWebSocket(roomId: string, onMessage: (message: any) => void) {
+export function connectWebSocket(roomId: string, onMessage: (message: any) => void, token?: string) {
   const wsUrl = STREAMING_SERVER_URL.replace('http://', 'ws://').replace('https://', 'wss://')
-  const fullWsUrl = `${wsUrl}/ws/${roomId}`
+  
+  // Get token from parameter or localStorage
+  const accessToken = token || (typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null)
+  
+  // Construct WebSocket URL with token: {serverUrl}/ws/${roomId}?token=${encodeURIComponent(token)}
+  let fullWsUrl = `${wsUrl}/ws/${roomId}`
+  if (accessToken) {
+    fullWsUrl += `?token=${encodeURIComponent(accessToken)}`
+  }
+  
   ws = new WebSocket(fullWsUrl)
 
   ws.onopen = () => {

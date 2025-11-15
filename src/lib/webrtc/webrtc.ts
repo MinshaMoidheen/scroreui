@@ -589,17 +589,24 @@ export async function toggleVideo() {
           await sender.replaceTrack(videoTrack);
         } else {
           pc.addTrack(videoTrack, localStream);
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          const targetId = Object.keys(peerConnections).find(
-            (id) => peerConnections[id] === pc
-          );
-          if (targetId) {
-            sendWebSocketMessage({
-              type: "offer",
-              target_id: targetId,
-              offer: offer,
-            });
+          // Only create offer if in stable state (renegotiation)
+          if (pc.signalingState === "stable") {
+            const offer = await pc.createOffer();
+            if (pc.signalingState === "stable") {
+              await pc.setLocalDescription(offer);
+              const targetId = Object.keys(peerConnections).find(
+                (id) => peerConnections[id] === pc
+              );
+              if (targetId) {
+                sendWebSocketMessage({
+                  type: "offer",
+                  target_id: targetId,
+                  offer: offer,
+                });
+              }
+            }
+          } else {
+            console.warn(`[Video] Cannot renegotiate, signaling state is ${pc.signalingState}`);
           }
         }
       }
@@ -637,17 +644,24 @@ export async function toggleVideo() {
           await sender.replaceTrack(newVideoTrack);
         } else {
           pc.addTrack(newVideoTrack, localStream);
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          const targetId = Object.keys(peerConnections).find(
-            (id) => peerConnections[id] === pc
-          );
-          if (targetId) {
-            sendWebSocketMessage({
-              type: "offer",
-              target_id: targetId,
-              offer: offer,
-            });
+          // Only create offer if in stable state (renegotiation)
+          if (pc.signalingState === "stable") {
+            const offer = await pc.createOffer();
+            if (pc.signalingState === "stable") {
+              await pc.setLocalDescription(offer);
+              const targetId = Object.keys(peerConnections).find(
+                (id) => peerConnections[id] === pc
+              );
+              if (targetId) {
+                sendWebSocketMessage({
+                  type: "offer",
+                  target_id: targetId,
+                  offer: offer,
+                });
+              }
+            }
+          } else {
+            console.warn(`[Video] Cannot renegotiate, signaling state is ${pc.signalingState}`);
           }
         }
       }
@@ -706,9 +720,16 @@ export async function shareScreen() {
       localScreenStream
         .getTracks()
         .forEach((track) => pc.addTrack(track, localScreenStream!));
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      sendWebSocketMessage({ type: "offer", target_id: peerId, offer: offer });
+      // Only create offer if in stable state (renegotiation)
+      if (pc.signalingState === "stable") {
+        const offer = await pc.createOffer();
+        if (pc.signalingState === "stable") {
+          await pc.setLocalDescription(offer);
+          sendWebSocketMessage({ type: "offer", target_id: peerId, offer: offer });
+        }
+      } else {
+        console.warn(`[Screen Share] Cannot renegotiate, signaling state is ${pc.signalingState} for ${peerId}`);
+      }
     }
   } catch (err) {
     console.error("Error sharing screen:", err);
@@ -735,9 +756,16 @@ export async function stopScreenShare() {
         pc.removeTrack(sender);
       }
     });
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    sendWebSocketMessage({ type: "offer", target_id: peerId, offer: offer });
+    // Only create offer if in stable state (renegotiation)
+    if (pc.signalingState === "stable") {
+      const offer = await pc.createOffer();
+      if (pc.signalingState === "stable") {
+        await pc.setLocalDescription(offer);
+        sendWebSocketMessage({ type: "offer", target_id: peerId, offer: offer });
+      }
+    } else {
+      console.warn(`[Screen Share] Cannot renegotiate, signaling state is ${pc.signalingState} for ${peerId}`);
+    }
   }
 }
 
@@ -848,19 +876,37 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
   };
 
   if (isOfferer) {
+    // Check if we can create an offer (state must be stable)
+    if (pc.signalingState === "closed") {
+      console.warn(`[WebRTC] Cannot create offer, connection is closed for ${targetId}`);
+      return;
+    }
+    
+    // Only create offer if in stable state
+    if (pc.signalingState !== "stable") {
+      console.warn(`[WebRTC] Cannot create offer, signaling state is ${pc.signalingState} (expected stable) for ${targetId}`);
+      return;
+    }
+    
     const offerOptions: RTCOfferOptions = {
       offerToReceiveAudio: true,
       offerToReceiveVideo: true,
       voiceActivityDetection: false,
     };
     const offer = await pc.createOffer(offerOptions);
-    await pc.setLocalDescription(offer);
-    console.log(`[WebRTC] Created offer for ${targetId}`);
-    sendWebSocketMessage({
-      type: "offer",
-      target_id: targetId,
-      offer: offer,
-    });
+    
+    // Double-check state is still stable before setting local description
+    if (pc.signalingState === "stable") {
+      await pc.setLocalDescription(offer);
+      console.log(`[WebRTC] Created offer for ${targetId}`);
+      sendWebSocketMessage({
+        type: "offer",
+        target_id: targetId,
+        offer: offer,
+      });
+    } else {
+      console.warn(`[WebRTC] Cannot set local offer, signaling state changed to ${pc.signalingState} for ${targetId}`);
+    }
   }
 }
 
@@ -909,32 +955,65 @@ export function stopLocalStream() {
 }
 
 async function handleOffer(senderId: string, offer: RTCSessionDescriptionInit) {
-  const pc =
-    peerConnections[senderId] || (await createPeerConnection(senderId, false));
+  let pc = peerConnections[senderId];
+  
+  // Create peer connection if it doesn't exist
+  if (!pc) {
+    await createPeerConnection(senderId, false);
+    pc = peerConnections[senderId];
+    if (!pc) {
+      console.error(`[WebRTC] Failed to create peer connection for ${senderId}`);
+      return;
+    }
+  }
 
+  // Only process offer if in stable state (glare condition check)
   if (pc.signalingState !== "stable") {
-    console.warn("Glare condition detected, ignoring incoming offer.");
+    console.warn(`[WebRTC] Glare condition detected, ignoring incoming offer. Current state: ${pc.signalingState}`);
     return;
   }
 
-  await pc.setRemoteDescription(new RTCSessionDescription(offer));
-  const iceCandidates = (pc as any).iceCandidates || [];
-  for (const candidate of iceCandidates) {
-    await pc.addIceCandidate(new RTCIceCandidate(candidate));
-  }
-  (pc as any).iceCandidates = [];
+  try {
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    
+    // Verify state transitioned to "have-remote-offer" before proceeding
+    if (pc.signalingState !== "have-remote-offer") {
+      console.warn(`[WebRTC] Unexpected signaling state after setRemoteDescription: ${pc.signalingState}, ignoring offer.`);
+      return;
+    }
 
-  const answerOptions: RTCAnswerOptions = {
-    voiceActivityDetection: false,
-  };
-  const answer = await pc.createAnswer(answerOptions);
-  await pc.setLocalDescription(answer);
-  console.log(`[WebRTC] Created answer for ${senderId}`);
-  sendWebSocketMessage({
-    type: "answer",
-    target_id: senderId,
-    answer: answer,
-  });
+    // Process any queued ICE candidates
+    const iceCandidates = (pc as any).iceCandidates || [];
+    for (const candidate of iceCandidates) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn(`[WebRTC] Error adding queued ICE candidate:`, err);
+      }
+    }
+    (pc as any).iceCandidates = [];
+
+    // Create answer
+    const answerOptions: RTCAnswerOptions = {
+      voiceActivityDetection: false,
+    };
+    const answer = await pc.createAnswer(answerOptions);
+    
+    // Double-check state is still "have-remote-offer" before setting local description
+    if (pc.signalingState === "have-remote-offer") {
+      await pc.setLocalDescription(answer);
+      console.log(`[WebRTC] Created and set answer for ${senderId}`);
+      sendWebSocketMessage({
+        type: "answer",
+        target_id: senderId,
+        answer: answer,
+      });
+    } else {
+      console.warn(`[WebRTC] Cannot set local answer, signaling state changed to ${pc.signalingState} (expected have-remote-offer)`);
+    }
+  } catch (error) {
+    console.error(`[WebRTC] Error handling offer from ${senderId}:`, error);
+  }
 }
 
 async function handleAnswer(
@@ -942,8 +1021,21 @@ async function handleAnswer(
   answer: RTCSessionDescriptionInit
 ) {
   const pc = peerConnections[senderId];
-  if (pc && pc.signalingState === "have-local-offer") {
-    await pc.setRemoteDescription(new RTCSessionDescription(answer));
+  if (!pc) {
+    console.warn(`[WebRTC] Received answer from unknown peer: ${senderId}`);
+    return;
+  }
+  
+  // Only set remote description if we're in "have-local-offer" state
+  if (pc.signalingState === "have-local-offer") {
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      console.log(`[WebRTC] Set remote answer from ${senderId}`);
+    } catch (error) {
+      console.error(`[WebRTC] Error setting remote answer from ${senderId}:`, error);
+    }
+  } else {
+    console.warn(`[WebRTC] Cannot set remote answer, signaling state is ${pc.signalingState} (expected have-local-offer) for ${senderId}`);
   }
 }
 

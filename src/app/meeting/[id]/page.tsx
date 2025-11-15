@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -35,12 +35,26 @@ import { connectWebSocket, disconnectWebSocket } from '@/lib/webrtc/websocket'
 export default function MeetingRoomPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const meetingId = params.id as string
   const { user } = useAuth()
   const [isRecording, setIsRecording] = useState(false)
   
-  // Get token from localStorage
+  // Get token from localStorage or URL query parameter
   const getToken = () => {
+    // First check if token is in URL (from my-meetings page)
+    const wsUrl = searchParams.get('wsUrl')
+    if (wsUrl) {
+      try {
+        const url = new URL(wsUrl)
+        const token = url.searchParams.get('token')
+        if (token) return token
+      } catch (e) {
+        // Invalid URL, fall back to localStorage
+      }
+    }
+    
+    // Fall back to localStorage
     if (typeof window !== 'undefined') {
       return localStorage.getItem('accessToken')
     }
@@ -86,10 +100,11 @@ export default function MeetingRoomPage() {
         await initWebRTC()
         setIsInitialized(true)
 
-        // Connect to WebSocket
+        // Connect to WebSocket with token
+        const token = getToken()
         const ws = connectWebSocket(meetingId, (message) => {
           handleSignalingData(message)
-        })
+        }, token || undefined)
         wsRef.current = ws
 
         toast({

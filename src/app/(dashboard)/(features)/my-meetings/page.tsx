@@ -17,6 +17,7 @@ import {
 import { useGetMyMeetingsQuery, useGetStudentMeetingsQuery } from '@/store/api/meetingApi'
 import { useAuth } from '@/context/auth-context'
 import { toast } from '@/hooks/use-toast'
+import { STREAMING_SERVER_URL } from '@/constants'
 
 type ViewMode = 'list' | 'grid'
 
@@ -27,6 +28,24 @@ export default function MyMeetingsPage() {
   const [searchTerm, setSearchTerm] = useState('')
 
   const handleStartMeeting = (meetingId: string) => {
+    // Get token from localStorage
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+    
+    if (!token) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please log in to join the meeting.',
+        variant: 'destructive',
+      })
+      return
+    }
+    
+    // Construct WebSocket URL: {serverUrl}/ws/${roomId}?token=${encodeURIComponent(token)}
+    // Convert HTTP URL to WebSocket URL
+    const wsServerUrl = STREAMING_SERVER_URL.replace('http://', 'ws://').replace('https://', 'wss://')
+    const wsUrl = `${wsServerUrl}/ws/${meetingId}?token=${encodeURIComponent(token)}`
+    
+    // Navigate to meeting page - the WebSocket connection will use the token from localStorage
     router.push(`/meeting/${meetingId}`)
   }
 
