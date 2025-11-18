@@ -135,7 +135,7 @@ export function StudentAuthForm({ className, ...props }: StudentAuthFormProps) {
         description: `Welcome back, ${result?.user?.username}!`,
       })
 
-      router.push('/')
+      router.push('/user-folders')
     } catch (error: unknown) {
       console.log('login error', error)
       const errorMessage =
