@@ -28,7 +28,12 @@ import {
   stopScreenShare,
   closeAllPeerConnections,
   stopLocalStream,
+  releaseAllMediaDevices,
   handleSignalingData,
+  hasActiveAudioTrack,
+  hasActiveVideoTrack,
+  setTrackStateChangeCallback,
+  cleanupInactiveTracks,
 } from '@/lib/webrtc/webrtc'
 import { connectWebSocket, disconnectWebSocket } from '@/lib/webrtc/websocket'
 
@@ -94,16 +99,26 @@ export default function MeetingRoomPage() {
   useEffect(() => {
     if (!meetingId || !user) return
 
+    // Set up callback to update UI when tracks are disabled by browser
+    setTrackStateChangeCallback(() => {
+      setIsMicMuted(!hasActiveAudioTrack())
+      setIsVideoOff(!hasActiveVideoTrack())
+    })
+
     const initializeMeeting = async () => {
       try {
         // Initialize WebRTC
         await initWebRTC()
         setIsInitialized(true)
+        
+        // Update initial state based on actual track states
+        setIsMicMuted(!hasActiveAudioTrack())
+        setIsVideoOff(!hasActiveVideoTrack())
 
         // Connect to WebSocket with token
         const token = getToken()
-        const ws = connectWebSocket(meetingId, (message) => {
-          handleSignalingData(message)
+        const ws = connectWebSocket(meetingId, async (message) => {
+          await handleSignalingData(message)
         }, token || undefined)
         wsRef.current = ws
 
@@ -111,28 +126,64 @@ export default function MeetingRoomPage() {
           title: 'Success',
           description: 'Meeting room initialized successfully.',
         })
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error initializing meeting:', error)
+        let errorMessage = 'Failed to initialize meeting room.'
+        if (error.message) {
+          errorMessage = error.message
+        }
         toast({
           title: 'Error',
-          description: 'Failed to initialize meeting room.',
+          description: errorMessage,
           variant: 'destructive',
         })
+        // Set states to reflect no media access
+        setIsMicMuted(true)
+        setIsVideoOff(true)
       }
     }
 
     initializeMeeting()
 
+    // Periodic check for track state changes (fallback for browsers that don't fire events)
+    const trackStateCheckInterval = setInterval(async () => {
+      // Clean up any inactive tracks first
+      await cleanupInactiveTracks()
+      
+      const hasAudio = hasActiveAudioTrack()
+      const hasVideo = hasActiveVideoTrack()
+      
+      // Update state to match actual track state
+      // If track is active, mic/video should not be muted/off
+      setIsMicMuted((prev) => {
+        const shouldBeMuted = !hasAudio
+        if (prev !== shouldBeMuted) {
+          return shouldBeMuted
+        }
+        return prev
+      })
+      
+      setIsVideoOff((prev) => {
+        const shouldBeOff = !hasVideo
+        if (prev !== shouldBeOff) {
+          return shouldBeOff
+        }
+        return prev
+      })
+    }, 1000) // Check every second
+
     return () => {
-      // Cleanup on unmount
+      // Cleanup on unmount - release all media devices
+      clearInterval(trackStateCheckInterval)
       if (wsRef.current) {
         disconnectWebSocket()
       }
       closeAllPeerConnections()
-      stopLocalStream()
       if (isRecording) {
         stopRecording()
       }
+      // Release all media devices to free up hardware for other apps
+      releaseAllMediaDevices()
     }
   }, [meetingId, user])
 
@@ -187,14 +238,44 @@ export default function MeetingRoomPage() {
     })
   }
 
-  const handleToggleMic = () => {
-    toggleMic()
-    setIsMicMuted(!isMicMuted)
+  const handleToggleMic = async () => {
+    try {
+      await toggleMic()
+      // State will be updated via the trackStateChangeCallback
+      // Use a small delay to ensure tracks are fully processed
+      setTimeout(() => {
+        setIsMicMuted(!hasActiveAudioTrack())
+      }, 100)
+    } catch (error: any) {
+      console.error('Error toggling microphone:', error)
+      toast({
+        title: 'Microphone Error',
+        description: error.message || 'Failed to toggle microphone',
+        variant: 'destructive',
+      })
+      // Update state to reflect error (mic will be muted if error occurred)
+      setIsMicMuted(true)
+    }
   }
 
   const handleToggleVideo = async () => {
-    await toggleVideo()
-    setIsVideoOff(!isVideoOff)
+    try {
+      await toggleVideo()
+      // State will be updated via the trackStateChangeCallback
+      // Use a small delay to ensure tracks are fully processed
+      setTimeout(() => {
+        setIsVideoOff(!hasActiveVideoTrack())
+      }, 100)
+    } catch (error: any) {
+      console.error('Error toggling video:', error)
+      toast({
+        title: 'Camera Error',
+        description: error.message || 'Failed to toggle camera',
+        variant: 'destructive',
+      })
+      // Update state to reflect error (video will be off if error occurred)
+      setIsVideoOff(true)
+    }
   }
 
   const handleShareScreen = async () => {
@@ -285,7 +366,9 @@ export default function MeetingRoomPage() {
           </Card>
 
           {/* Remote Videos Container */}
-          <div id="videos-container" className="contents"></div>
+          <div id="videos-container" className="contents">
+            {/* Video elements will be dynamically added here as grid items */}
+          </div>
 
           {/* Screen Share Container */}
           <Card id="screen-share-container" className="hidden bg-gray-800 border-gray-700">
