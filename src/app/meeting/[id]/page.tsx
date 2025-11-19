@@ -82,8 +82,8 @@ export default function MeetingRoomPage() {
     return null
   }
   
-  const [isMicMuted, setIsMicMuted] = useState(false)
-  const [isVideoOff, setIsVideoOff] = useState(false)
+  const [isMicMuted, setIsMicMuted] = useState(true)
+  const [isVideoOff, setIsVideoOff] = useState(true)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
   const [recordingSessionId, setRecordingSessionId] = useState<string | null>(null)

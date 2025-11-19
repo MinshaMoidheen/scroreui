@@ -156,137 +156,26 @@ function logAvailableAudioTracks(label: string, stream: MediaStream | null) {
 
 export async function initWebRTC() {
   try {
-    console.log("[Media Init] Requesting media with echo cancellation enabled");
+    console.log(
+      "[Media Init] Initializing WebRTC with empty media stream (camera/mic disabled by default)"
+    );
 
-    let audioConstraints: MediaTrackConstraints = {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    };
-
-    if (navigator.userAgent.includes("Chrome")) {
-      audioConstraints = {
-        ...audioConstraints,
-        googEchoCancellation: true,
-        googNoiseSuppression: true,
-        googAutoGainControl: true,
-        googHighpassFilter: true,
-        googTypingNoiseDetection: true,
-        googEchoCancellation2: true,
-        latency: 0.01,
-        sampleRate: 48000,
-        channelCount: 1,
-      } as any;
-    } else {
-      audioConstraints = {
-        ...audioConstraints,
-        latency: 0.01,
-        sampleRate: 48000,
-        channelCount: 1,
-      };
-    }
-
-    console.log("[Media Init] Using audio constraints:", audioConstraints);
-
-    // Try to get both video and audio, but handle permission denials gracefully
-    let videoEnabled = true;
-    let audioEnabled = true;
-
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: audioConstraints,
-      });
-      console.log(
-        "[Media Init] Successfully got media stream with video and audio"
-      );
-    } catch (error: any) {
-      // If both fail, try them separately to see which permission was denied
-      if (
-        error.name === "NotAllowedError" ||
-        error.name === "PermissionDeniedError"
-      ) {
-        console.warn(
-          "[Media Init] Permission denied for video/audio, trying separately..."
-        );
-
-        // Try video only
-        try {
-          const videoStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-          });
-          localStream = videoStream;
-          videoEnabled = true;
-          audioEnabled = false;
-          console.log("[Media Init] Got video only (audio permission denied)");
-        } catch (videoError: any) {
-          videoEnabled = false;
-          console.warn("[Media Init] Video permission denied");
-
-          // Try audio only
-          try {
-            const audioStream = await navigator.mediaDevices.getUserMedia({
-              audio: audioConstraints,
-            });
-            localStream = audioStream;
-            audioEnabled = true;
-            console.log(
-              "[Media Init] Got audio only (video permission denied)"
-            );
-          } catch (audioError: any) {
-            audioEnabled = false;
-            console.error(
-              "[Media Init] Both video and audio permissions denied"
-            );
-            throw new Error(
-              "Camera and microphone access denied. Please allow access in your browser settings."
-            );
-          }
-        }
-      } else {
-        throw error;
-      }
-    }
-
-    if (!localStream) {
-      throw new Error("Failed to acquire media stream");
-    }
+    // Create an empty MediaStream - hardware will only be acquired when user toggles mic/video on
+    localStream = new MediaStream();
 
     setLocalStream(localStream);
-    logAvailableAudioTracks("init", localStream);
 
-    // Add event listeners to all tracks to detect browser-level changes
+    // Add event listeners to detect browser-level changes when tracks are added later
     setupTrackEventListeners(localStream);
 
     // Add local tracks to any existing peer connections that were created without localStream
     addLocalTracksToExistingConnections();
 
-    const audioTracks = localStream.getAudioTracks();
-    audioTracks.forEach((track, index) => {
-      const settings = track.getSettings();
-      console.log(`[Audio Init] Track ${index} (${track.id}) settings:`);
-      console.log(`  - echoCancellation: ${settings.echoCancellation}`);
-      console.log(`  - noiseSuppression: ${settings.noiseSuppression}`);
-      console.log(`  - autoGainControl: ${settings.autoGainControl}`);
-      console.log(`  - sampleRate: ${settings.sampleRate}`);
-      console.log(`  - channelCount: ${settings.channelCount}`);
-      console.log(`  - label: "${settings.label}"`);
-
-      if (settings.echoCancellation === false) {
-        console.warn(
-          `[Audio Init] ❌ CRITICAL: Echo cancellation is DISABLED for track ${track.id}!`
-        );
-      } else if (settings.echoCancellation === true) {
-        console.log(
-          `[Audio Init] ✅ Echo cancellation is ENABLED for track ${track.id}`
-        );
-      }
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    console.log("[Audio Init] Audio initialization complete");
+    console.log(
+      "[Media Init] WebRTC initialized successfully. Camera and microphone are disabled by default."
+    );
   } catch (error) {
-    console.error("Error accessing media devices.", error);
+    console.error("Error initializing WebRTC.", error);
     throw error;
   }
 }
@@ -1397,6 +1286,85 @@ function addLocalTracksToExistingConnections() {
   }
 }
 
+// Helper function to handle video track state changes and toggle between video and placeholder
+function handleRemoteVideoTrackState(
+  participantId: string,
+  videoTrack: MediaStreamTrack
+) {
+  const video = document.getElementById(
+    `video-${participantId}`
+  ) as HTMLVideoElement;
+  let placeholder = document.getElementById(`placeholder-${participantId}`);
+
+  // Ensure placeholder exists
+  if (!placeholder) {
+    addPlaceholderVideoElement(participantId);
+    placeholder = document.getElementById(`placeholder-${participantId}`);
+  }
+
+  if (!video || !placeholder) {
+    return;
+  }
+
+  const updateDisplay = () => {
+    const isTrackActive =
+      videoTrack.readyState === "live" && videoTrack.enabled;
+
+    if (isTrackActive) {
+      // Show video, hide placeholder
+      video.classList.remove("hidden");
+      placeholder!.style.display = "none";
+      console.log(
+        `[WebRTC] Showing video for ${participantId} (track enabled)`
+      );
+    } else {
+      // Hide video, show placeholder
+      video.classList.add("hidden");
+      placeholder!.style.display = "block";
+      console.log(
+        `[WebRTC] Showing placeholder for ${participantId} (track disabled/ended)`
+      );
+    }
+  };
+
+  // Listen for track ended event
+  const endedHandler = () => {
+    console.log(`[WebRTC] Video track ended for ${participantId}`);
+    updateDisplay();
+  };
+  videoTrack.addEventListener("ended", endedHandler);
+
+  // Since MediaStreamTrack doesn't fire events for enabled property changes,
+  // we'll use a periodic check to monitor the enabled state
+  let lastEnabledState = videoTrack.enabled;
+  const enabledCheckInterval = setInterval(() => {
+    if (videoTrack.readyState === "ended") {
+      clearInterval(enabledCheckInterval);
+      return;
+    }
+
+    if (videoTrack.enabled !== lastEnabledState) {
+      lastEnabledState = videoTrack.enabled;
+      console.log(
+        `[WebRTC] Video track enabled state changed for ${participantId}: ${videoTrack.enabled}`
+      );
+      updateDisplay();
+    }
+  }, 500); // Check every 500ms
+
+  // Store interval ID on the track for cleanup (if needed)
+  (videoTrack as any)._enabledCheckInterval = enabledCheckInterval;
+
+  // Initial state check
+  updateDisplay();
+
+  // Return cleanup function
+  return () => {
+    clearInterval(enabledCheckInterval);
+    videoTrack.removeEventListener("ended", endedHandler);
+  };
+}
+
 async function createPeerConnection(targetId: string, isOfferer: boolean) {
   // Allow creating peer connections even without localStream (for receiving remote streams)
   // Check if peer connection already exists
@@ -1494,7 +1462,85 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
         );
       } else if (pc.connectionState === "connected") {
         connectionStates[targetId].connectedAt = new Date();
-        console.log(`[WebRTC] Successfully connected to ${targetId}`);
+        console.log(`[WebRTC] ✅ Successfully connected to ${targetId}`);
+
+        // Log what tracks we're sending
+        const senders = pc.getSenders();
+        const audioSenders = senders.filter(
+          (s) => s.track && s.track.kind === "audio"
+        );
+        const videoSenders = senders.filter(
+          (s) => s.track && s.track.kind === "video"
+        );
+        console.log(
+          `[WebRTC] Connection to ${targetId}: Sending ${audioSenders.length} audio track(s) and ${videoSenders.length} video track(s)`
+        );
+
+        // Log what tracks we're receiving
+        const receivers = pc.getReceivers();
+        const audioReceivers = receivers.filter(
+          (r) => r.track && r.track.kind === "audio"
+        );
+        const videoReceivers = receivers.filter(
+          (r) => r.track && r.track.kind === "video"
+        );
+        console.log(
+          `[WebRTC] Connection to ${targetId}: Receiving ${audioReceivers.length} audio track(s) and ${videoReceivers.length} video track(s)`
+        );
+
+        // Log details of received tracks
+        if (audioReceivers.length > 0) {
+          audioReceivers.forEach((receiver, index) => {
+            const track = receiver.track;
+            console.log(
+              `[WebRTC] 🔊 Receiving audio track ${index} from ${targetId}: id=${track.id}, enabled=${track.enabled}, readyState=${track.readyState}, muted=${track.muted}`
+            );
+          });
+        } else {
+          console.log(
+            `[WebRTC] ⚠️ No audio tracks received from ${targetId} yet - waiting for ontrack event`
+          );
+        }
+
+        if (videoReceivers.length > 0) {
+          videoReceivers.forEach((receiver, index) => {
+            const track = receiver.track;
+            console.log(
+              `[WebRTC] 📹 Receiving video track ${index} from ${targetId}: id=${track.id}, enabled=${track.enabled}, readyState=${track.readyState}, muted=${track.muted}`
+            );
+          });
+        } else {
+          console.log(
+            `[WebRTC] ⚠️ No video tracks received from ${targetId} yet - waiting for ontrack event`
+          );
+        }
+
+        // Check again after a short delay to see if tracks arrived
+        setTimeout(() => {
+          const receiversAfterDelay = pc.getReceivers();
+          const audioReceiversAfterDelay = receiversAfterDelay.filter(
+            (r) => r.track && r.track.kind === "audio"
+          );
+          const videoReceiversAfterDelay = receiversAfterDelay.filter(
+            (r) => r.track && r.track.kind === "video"
+          );
+
+          if (
+            audioReceiversAfterDelay.length !== audioReceivers.length ||
+            videoReceiversAfterDelay.length !== videoReceivers.length
+          ) {
+            console.log(
+              `[WebRTC] 📊 Track status update for ${targetId} (after 1s): Receiving ${audioReceiversAfterDelay.length} audio and ${videoReceiversAfterDelay.length} video track(s)`
+            );
+          } else if (
+            audioReceiversAfterDelay.length === 0 &&
+            videoReceiversAfterDelay.length === 0
+          ) {
+            console.warn(
+              `[WebRTC] ⚠️ Still no tracks received from ${targetId} after 1 second - ontrack event may not have fired yet`
+            );
+          }
+        }, 1000);
       }
     }
   };
@@ -1541,10 +1587,17 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
 
   // Only add local tracks if localStream exists
   if (localStream) {
-    localStream.getTracks().forEach((track) => {
+    const tracks = localStream.getTracks();
+    console.log(
+      `[WebRTC] Adding ${tracks.length} local track(s) to peer connection for ${targetId}:`
+    );
+    tracks.forEach((track) => {
       console.log(
-        `[WebRTC] Adding ${track.kind} track to peer connection for ${targetId}`
+        `[WebRTC]   - ${track.kind} track: id=${track.id}, enabled=${track.enabled}, readyState=${track.readyState}, muted=${track.muted}`
       );
+    });
+
+    tracks.forEach((track) => {
       const sender = pc.addTrack(track, localStream!);
       if (sender.getParameters) {
         const params = sender.getParameters();
@@ -1592,19 +1645,36 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
   }
 
   pc.ontrack = (event) => {
+    console.log(
+      `[WebRTC] 🎯 ontrack event fired from ${targetId}: track kind=${event.track.kind}, track id=${event.track.id}, enabled=${event.track.enabled}, readyState=${event.track.readyState}`
+    );
+
     if (!event.streams || !event.streams[0]) {
-      console.log(`[WebRTC] ontrack: No streams received from ${targetId}`);
+      console.warn(
+        `[WebRTC] ⚠️ ontrack: No streams received from ${targetId} - event.streams is empty`
+      );
       return;
     }
 
     const [stream] = event.streams;
     console.log(
-      `[WebRTC] ontrack: Received ${
+      `[WebRTC] ✅ ontrack: Received ${
         event.track.kind
       } track from ${targetId}, stream has ${
         stream.getVideoTracks().length
       } video and ${stream.getAudioTracks().length} audio tracks`
     );
+
+    // Log all tracks in the stream
+    const allTracks = stream.getTracks();
+    console.log(
+      `[WebRTC] Stream from ${targetId} contains ${allTracks.length} total track(s):`
+    );
+    allTracks.forEach((track, index) => {
+      console.log(
+        `[WebRTC]   Track ${index}: kind=${track.kind}, id=${track.id}, enabled=${track.enabled}, readyState=${track.readyState}, muted=${track.muted}, label="${track.label}"`
+      );
+    });
 
     // Handle video tracks
     if (event.track.kind === "video") {
@@ -1658,11 +1728,12 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
               ) as HTMLVideoElement;
               if (video) {
                 video.srcObject = stream;
-                video.classList.remove("hidden");
-                placeholder.style.display = "none";
                 console.log(
                   `[WebRTC] Updated placeholder with video stream for ${targetId}`
                 );
+
+                // Set up track state monitoring to toggle between video and placeholder
+                handleRemoteVideoTrackState(targetId, videoTrack);
 
                 // IMPORTANT: Also add audio if stream has audio tracks
                 if (
@@ -1673,24 +1744,36 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
                     targetId !== (window as any).myUserId) &&
                   stream.getAudioTracks().length > 0
                 ) {
+                  console.log(
+                    `[WebRTC] 🔊 Video stream from ${targetId} includes ${
+                      stream.getAudioTracks().length
+                    } audio track(s) - setting up audio playback`
+                  );
                   const existingAudioElement = document.getElementById(
                     `audio-${targetId}`
                   );
                   if (!existingAudioElement) {
                     console.log(
-                      `[WebRTC] Adding audio element when updating placeholder for ${targetId}`
+                      `[WebRTC] ✅ Adding audio element when updating placeholder for ${targetId}`
                     );
                     addAudioElement(targetId, stream);
                   } else {
                     // Update existing audio element
                     const audio = existingAudioElement as HTMLAudioElement;
                     if (audio.srcObject !== stream) {
+                      console.log(
+                        `[WebRTC] 🔄 Updating audio element with new stream for ${targetId}`
+                      );
                       audio.srcObject = stream;
                     }
                   }
                 }
               } else {
                 addVideoElement(targetId, stream);
+
+                // Set up track state monitoring to toggle between video and placeholder
+                handleRemoteVideoTrackState(targetId, videoTrack);
+
                 // Ensure audio is added if stream has audio tracks
                 if (
                   targetId !== myId &&
@@ -1700,12 +1783,17 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
                     targetId !== (window as any).myUserId) &&
                   stream.getAudioTracks().length > 0
                 ) {
+                  console.log(
+                    `[WebRTC] 🔊 Video stream from ${targetId} includes ${
+                      stream.getAudioTracks().length
+                    } audio track(s) - setting up audio playback`
+                  );
                   const existingAudioElement = document.getElementById(
                     `audio-${targetId}`
                   );
                   if (!existingAudioElement) {
                     console.log(
-                      `[WebRTC] Adding audio element after creating video element for ${targetId}`
+                      `[WebRTC] ✅ Adding audio element after creating video element for ${targetId}`
                     );
                     addAudioElement(targetId, stream);
                   }
@@ -1713,6 +1801,10 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
               }
             } else {
               addVideoElement(targetId, stream);
+
+              // Set up track state monitoring to toggle between video and placeholder
+              handleRemoteVideoTrackState(targetId, videoTrack);
+
               // Ensure audio is added if stream has audio tracks
               if (
                 targetId !== myId &&
@@ -1737,11 +1829,9 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
             if (video.srcObject !== stream) {
               video.srcObject = stream;
             }
-            // Hide placeholder if it exists
-            if (placeholder) {
-              placeholder.style.display = "none";
-            }
-            video.classList.remove("hidden");
+
+            // Set up track state monitoring to toggle between video and placeholder
+            handleRemoteVideoTrackState(targetId, videoTrack);
 
             // IMPORTANT: Also ensure audio is added/updated if stream has audio tracks
             if (
@@ -1750,12 +1840,17 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
                 targetId !== (window as any).myUserId) &&
               stream.getAudioTracks().length > 0
             ) {
+              console.log(
+                `[WebRTC] 🔊 Video stream from ${targetId} includes ${
+                  stream.getAudioTracks().length
+                } audio track(s) - setting up audio playback`
+              );
               const existingAudioElement = document.getElementById(
                 `audio-${targetId}`
               );
               if (!existingAudioElement) {
                 console.log(
-                  `[WebRTC] Adding audio element when updating existing video for ${targetId}`
+                  `[WebRTC] ✅ Adding audio element when updating existing video for ${targetId}`
                 );
                 addAudioElement(targetId, stream);
               } else {
@@ -1763,7 +1858,7 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
                 const audio = existingAudioElement as HTMLAudioElement;
                 if (audio.srcObject !== stream) {
                   console.log(
-                    `[WebRTC] Updating audio element with new stream for ${targetId}`
+                    `[WebRTC] 🔄 Updating audio element with new stream for ${targetId}`
                   );
                   audio.srcObject = stream;
                 }
@@ -1774,9 +1869,16 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
       }
     } else if (event.track.kind === "audio") {
       // Handle standalone audio tracks
+      const audioTrack = event.track;
       console.log(
-        `[WebRTC] Processing standalone audio track from ${targetId}`
+        `[WebRTC] 🔊 Received AUDIO track from ${targetId}: id=${audioTrack.id}, enabled=${audioTrack.enabled}, readyState=${audioTrack.readyState}, muted=${audioTrack.muted}, label="${audioTrack.label}"`
       );
+      console.log(
+        `[WebRTC] Audio stream from ${targetId} has ${
+          stream.getAudioTracks().length
+        } audio track(s)`
+      );
+
       if (
         targetId === myId ||
         (typeof window !== "undefined" &&
@@ -1788,13 +1890,33 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
         );
         return;
       }
+
+      // Log track state changes
+      audioTrack.addEventListener("ended", () => {
+        console.log(
+          `[WebRTC] ⏹️ Audio track ended for ${targetId} - audio stream stopped`
+        );
+      });
+
+      audioTrack.addEventListener("mute", () => {
+        console.log(
+          `[WebRTC] 🔇 Audio track muted for ${targetId} - user muted their microphone`
+        );
+      });
+
+      audioTrack.addEventListener("unmute", () => {
+        console.log(
+          `[WebRTC] 🔊 Audio track unmuted for ${targetId} - user unmuted their microphone`
+        );
+      });
+
       const existingAudioElement = document.getElementById(`audio-${targetId}`);
       const existingVideoElement = document.getElementById(`video-${targetId}`);
 
       // Add audio element - either standalone or to complement existing video
       if (!existingAudioElement) {
         console.log(
-          `[WebRTC] Adding audio element for ${targetId}${
+          `[WebRTC] ✅ Adding audio element for ${targetId}${
             existingVideoElement
               ? " (complementing existing video)"
               : " (standalone audio)"
@@ -1806,9 +1928,13 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
         const audio = existingAudioElement as HTMLAudioElement;
         if (audio.srcObject !== stream) {
           console.log(
-            `[WebRTC] Updating audio element with new stream for ${targetId}`
+            `[WebRTC] 🔄 Updating audio element with new stream for ${targetId}`
           );
           audio.srcObject = stream;
+        } else {
+          console.log(
+            `[WebRTC] ℹ️ Audio element already exists with same stream for ${targetId}`
+          );
         }
       }
     }
@@ -1894,10 +2020,28 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
       if (offer.sdp) {
         const hasVideo = offer.sdp.includes("m=video");
         const hasAudio = offer.sdp.includes("m=audio");
-        const videoSendCount = (offer.sdp.match(/a=sendonly|a=sendrecv/g) || [])
-          .length;
+        const sendRecvCount = (offer.sdp.match(/a=sendrecv/g) || []).length;
+        const sendOnlyCount = (offer.sdp.match(/a=sendonly/g) || []).length;
+        const recvOnlyCount = (offer.sdp.match(/a=recvonly/g) || []).length;
+
+        // Count senders to verify what we're offering
+        const senders = pc.getSenders();
+        const audioSenders = senders.filter(
+          (s) => s.track && s.track.kind === "audio"
+        );
+        const videoSenders = senders.filter(
+          (s) => s.track && s.track.kind === "video"
+        );
+
+        console.log(`[WebRTC] 📤 Offer SDP for ${targetId}:`);
         console.log(
-          `[WebRTC] Offer SDP for ${targetId} - video: ${hasVideo}, audio: ${hasAudio}, send directions: ${videoSendCount}`
+          `[WebRTC]   - SDP contains: video=${hasVideo}, audio=${hasAudio}`
+        );
+        console.log(
+          `[WebRTC]   - SDP directions: sendrecv=${sendRecvCount}, sendonly=${sendOnlyCount}, recvonly=${recvOnlyCount}`
+        );
+        console.log(
+          `[WebRTC]   - Local senders: ${audioSenders.length} audio, ${videoSenders.length} video`
         );
       }
 
@@ -2159,8 +2303,38 @@ async function handleOffer(senderId: string, offer: RTCSessionDescriptionInit) {
     if (answer.sdp) {
       const hasVideo = answer.sdp.includes("m=video");
       const hasAudio = answer.sdp.includes("m=audio");
+      const sendRecvCount = (answer.sdp.match(/a=sendrecv/g) || []).length;
+      const sendOnlyCount = (answer.sdp.match(/a=sendonly/g) || []).length;
+      const recvOnlyCount = (answer.sdp.match(/a=recvonly/g) || []).length;
+
+      // Count senders and receivers to verify what we're offering/receiving
+      const senders = pc.getSenders();
+      const receivers = pc.getReceivers();
+      const audioSenders = senders.filter(
+        (s) => s.track && s.track.kind === "audio"
+      );
+      const videoSenders = senders.filter(
+        (s) => s.track && s.track.kind === "video"
+      );
+      const audioReceivers = receivers.filter(
+        (r) => r.track && r.track.kind === "audio"
+      );
+      const videoReceivers = receivers.filter(
+        (r) => r.track && r.track.kind === "video"
+      );
+
+      console.log(`[WebRTC] 📥 Answer SDP for ${senderId}:`);
       console.log(
-        `[WebRTC] Answer SDP for ${senderId} - video: ${hasVideo}, audio: ${hasAudio}`
+        `[WebRTC]   - SDP contains: video=${hasVideo}, audio=${hasAudio}`
+      );
+      console.log(
+        `[WebRTC]   - SDP directions: sendrecv=${sendRecvCount}, sendonly=${sendOnlyCount}, recvonly=${recvOnlyCount}`
+      );
+      console.log(
+        `[WebRTC]   - Local senders: ${audioSenders.length} audio, ${videoSenders.length} video`
+      );
+      console.log(
+        `[WebRTC]   - Local receivers: ${audioReceivers.length} audio, ${videoReceivers.length} video`
       );
     }
 
