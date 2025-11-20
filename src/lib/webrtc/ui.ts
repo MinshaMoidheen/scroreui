@@ -3,12 +3,37 @@
 // Create a placeholder video element (without stream) - like Google Meet
 export function addPlaceholderVideoElement(
   participantId: string,
-  participantName?: string
+  participantName?: string,
+  retryCount: number = 0
 ) {
   const container = document.getElementById("videos-container");
   if (!container) {
-    console.warn("[Video] videos-container not found in DOM");
-    return;
+    // Retry with exponential backoff if container doesn't exist yet
+    const maxRetries = 5;
+    if (retryCount < maxRetries) {
+      const delay = Math.min(100 * Math.pow(2, retryCount), 1000); // Max 1 second
+      console.log(
+        `[Video] videos-container not found, retrying in ${delay}ms (attempt ${
+          retryCount + 1
+        }/${maxRetries})`
+      );
+      setTimeout(() => {
+        // Use requestAnimationFrame for better timing with React rendering
+        requestAnimationFrame(() => {
+          addPlaceholderVideoElement(
+            participantId,
+            participantName,
+            retryCount + 1
+          );
+        });
+      }, delay);
+      return;
+    } else {
+      console.warn(
+        `[Video] videos-container not found after ${maxRetries} retries, giving up`
+      );
+      return;
+    }
   }
 
   // Check if element already exists
@@ -19,6 +44,10 @@ export function addPlaceholderVideoElement(
     );
     return;
   }
+
+  // Determine display name: use participantName if provided, otherwise fallback
+  const displayName =
+    participantName || `Participant ${participantId.substring(0, 8)}...`;
 
   // Create Card-like structure to match the local video styling
   const gridItem = document.createElement("div");
@@ -31,8 +60,7 @@ export function addPlaceholderVideoElement(
   cardHeader.className = "pb-2 px-4 pt-4";
   const cardTitle = document.createElement("h3");
   cardTitle.className = "text-sm font-semibold text-white";
-  cardTitle.textContent =
-    participantName || `Participant ${participantId.substring(0, 8)}...`;
+  cardTitle.textContent = displayName;
   cardHeader.appendChild(cardTitle);
 
   const cardContent = document.createElement("div");
@@ -48,12 +76,13 @@ export function addPlaceholderVideoElement(
   placeholder.id = `placeholder-${participantId}`;
 
   // Create a simple avatar/icon placeholder
+  // Use first character of display name (or "Y" for "You")
   const avatar = document.createElement("div");
   avatar.className =
     "w-16 h-16 rounded-full bg-gray-700 flex items-center justify-center text-gray-400 text-2xl font-semibold mb-2";
-  avatar.textContent = (participantName || participantId)
-    .charAt(0)
-    .toUpperCase();
+  const avatarText =
+    displayName === "You" ? "Y" : displayName.charAt(0).toUpperCase();
+  avatar.textContent = avatarText;
   placeholder.appendChild(avatar);
 
   // Create video element (hidden until stream is available)
@@ -78,7 +107,11 @@ export function addPlaceholderVideoElement(
   );
 }
 
-export function addVideoElement(participantId: string, stream: MediaStream) {
+export function addVideoElement(
+  participantId: string,
+  stream: MediaStream,
+  participantName?: string
+) {
   const container = document.getElementById("videos-container");
   if (!container) {
     console.warn("[Video] videos-container not found in DOM");
@@ -101,6 +134,13 @@ export function addVideoElement(participantId: string, stream: MediaStream) {
     if (placeholder) {
       placeholder.style.display = "none";
     }
+    // Update title if participantName is provided
+    if (participantName) {
+      const cardTitle = existingWrapper?.querySelector("h3");
+      if (cardTitle) {
+        cardTitle.textContent = participantName;
+      }
+    }
     console.log(
       `[Video] Updated existing video element for participant ${participantId} with stream`
     );
@@ -111,6 +151,10 @@ export function addVideoElement(participantId: string, stream: MediaStream) {
   if (existingWrapper) {
     existingWrapper.remove();
   }
+
+  // Determine display name: use participantName if provided, otherwise fallback
+  const displayName =
+    participantName || `Participant ${participantId.substring(0, 8)}...`;
 
   // Create Card-like structure to match the local video styling
   // This will be a grid item (since container has display: contents)
@@ -124,7 +168,7 @@ export function addVideoElement(participantId: string, stream: MediaStream) {
   cardHeader.className = "pb-2 px-4 pt-4";
   const cardTitle = document.createElement("h3");
   cardTitle.className = "text-sm font-semibold text-white";
-  cardTitle.textContent = `Participant ${participantId.substring(0, 8)}...`;
+  cardTitle.textContent = displayName;
   cardHeader.appendChild(cardTitle);
 
   const cardContent = document.createElement("div");
@@ -141,10 +185,13 @@ export function addVideoElement(participantId: string, stream: MediaStream) {
   newPlaceholder.style.display = "none"; // Hidden initially since we have video
 
   // Create a simple avatar/icon placeholder
+  // Use first character of display name (or "Y" for "You")
   const avatar = document.createElement("div");
   avatar.className =
     "w-16 h-16 rounded-full bg-gray-700 flex items-center justify-center text-gray-400 text-2xl font-semibold mb-2";
-  avatar.textContent = participantId.charAt(0).toUpperCase();
+  const avatarText =
+    displayName === "You" ? "Y" : displayName.charAt(0).toUpperCase();
+  avatar.textContent = avatarText;
   newPlaceholder.appendChild(avatar);
 
   const video = document.createElement("video");
@@ -294,7 +341,11 @@ export function removeAudioElement(participantId: string) {
   }
 }
 
-export function addScreenShare(stream: MediaStream, participantId: string) {
+export function addScreenShare(
+  stream: MediaStream,
+  participantId: string,
+  participantName?: string
+) {
   const container = document.getElementById("videos-container");
   if (!container) {
     console.warn("[Screen Share] videos-container not found in DOM");
@@ -312,12 +363,23 @@ export function addScreenShare(stream: MediaStream, participantId: string) {
     ) as HTMLVideoElement;
     if (video) {
       video.srcObject = stream;
+      // Update title if participantName is provided
+      if (participantName) {
+        const cardTitle = existingScreenShare.querySelector("h3");
+        if (cardTitle) {
+          cardTitle.textContent = `Screen Share - ${participantName}`;
+        }
+      }
       console.log(
         `[Screen Share] Updated existing screen share for ${participantId}`
       );
       return;
     }
   }
+
+  // Determine display name: use participantName if provided, otherwise fallback
+  const displayName =
+    participantName || `Participant ${participantId.substring(0, 8)}...`;
 
   // Create Card-like structure matching participant video styling
   const gridItem = document.createElement("div");
@@ -330,7 +392,7 @@ export function addScreenShare(stream: MediaStream, participantId: string) {
   cardHeader.className = "pb-2 px-4 pt-4";
   const cardTitle = document.createElement("h3");
   cardTitle.className = "text-sm font-semibold text-white";
-  cardTitle.textContent = `Screen Share - ${participantId.substring(0, 8)}...`;
+  cardTitle.textContent = `Screen Share - ${displayName}`;
   cardHeader.appendChild(cardTitle);
 
   const cardContent = document.createElement("div");
@@ -431,5 +493,42 @@ export function showHostControls() {
   const hostControls = document.getElementById("host-controls");
   if (hostControls) {
     hostControls.style.display = "block";
+  }
+}
+
+// Update the title of an existing video element
+export function updateVideoElementTitle(
+  participantId: string,
+  displayName: string
+) {
+  const videoWrapper = document.getElementById(
+    `video-wrapper-${participantId}`
+  );
+  if (videoWrapper) {
+    const cardTitle = videoWrapper.querySelector("h3");
+    if (cardTitle) {
+      cardTitle.textContent = displayName;
+    }
+    // Also update avatar if placeholder exists
+    const placeholder = document.getElementById(`placeholder-${participantId}`);
+    if (placeholder) {
+      const avatar = placeholder.querySelector("div");
+      if (avatar) {
+        const avatarText =
+          displayName === "You" ? "Y" : displayName.charAt(0).toUpperCase();
+        avatar.textContent = avatarText;
+      }
+    }
+  }
+
+  // Also update screen share title if it exists
+  const screenWrapper = document.getElementById(
+    `screen-wrapper-${participantId}`
+  );
+  if (screenWrapper) {
+    const cardTitle = screenWrapper.querySelector("h3");
+    if (cardTitle) {
+      cardTitle.textContent = `Screen Share - ${displayName}`;
+    }
   }
 }

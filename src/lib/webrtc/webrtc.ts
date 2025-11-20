@@ -10,6 +10,7 @@ import {
   showHostControls,
   addAudioElement,
   removeAudioElement,
+  updateVideoElementTitle,
 } from "./ui";
 import { STREAMING_SERVER_URL } from "@/constants";
 
@@ -28,6 +29,10 @@ let recordingPeerConnection: RTCPeerConnection | null = null;
 let recordingSessionId: string | null = null;
 const peerConnections: Record<string, RTCPeerConnection> = {};
 let recordingClonedTracks: MediaStreamTrack[] = [];
+const participantUsernames: Record<string, string> = {}; // Map participantId -> username
+
+// Negotiation lock to prevent concurrent offer creation
+const negotiationInProgress: Record<string, boolean> = {};
 
 // Connection state tracking
 const connectionStates: Record<
@@ -199,9 +204,9 @@ export async function startRecording(
     try {
       const screenStreamConstraints: MediaStreamConstraints = {
         video: {
-          width: { ideal: window.screen.width },
-          height: { ideal: window.screen.height },
-          frameRate: { ideal: 30 },
+          width: { ideal: window.screen.width * window.devicePixelRatio },
+          height: { ideal: window.screen.height * window.devicePixelRatio },
+          frameRate: { ideal: 60 },
           cursor: "always",
         } as MediaTrackConstraints,
         audio: {
@@ -555,6 +560,13 @@ export async function handleSignalingData(message: any) {
       if (typeof window !== "undefined") {
         (window as any).myUserId = myId;
       }
+      // Store current user's username
+      if (message.username && myId) {
+        participantUsernames[myId] = message.username;
+        // Update existing element title if it exists (unlikely but possible)
+        const displayName = getDisplayName(myId);
+        updateVideoElementTitle(myId, displayName);
+      }
       break;
 
     case "existing_participants":
@@ -592,6 +604,18 @@ export async function handleSignalingData(message: any) {
         }
       }
 
+      // Store usernames from participants array
+      if (message.participants && Array.isArray(message.participants)) {
+        for (const participant of message.participants) {
+          if (participant.id && participant.username) {
+            participantUsernames[participant.id] = participant.username;
+            // Update existing element titles if they exist
+            const displayName = getDisplayName(participant.id);
+            updateVideoElementTitle(participant.id, displayName);
+          }
+        }
+      }
+
       // Create placeholder UI elements for all existing participants immediately
       // This ensures new joiners see existing participants even if their camera/mic is off
       for (const participantId of message.participant_ids) {
@@ -603,7 +627,8 @@ export async function handleSignalingData(message: any) {
             console.log(
               `[WebRTC] Creating placeholder UI element for existing participant: ${participantId}`
             );
-            addPlaceholderVideoElement(participantId);
+            const displayName = getDisplayName(participantId);
+            addPlaceholderVideoElement(participantId, displayName);
           }
         }
       }
@@ -624,6 +649,13 @@ export async function handleSignalingData(message: any) {
       console.log(
         `[WebRTC] Received new_participant: ${message.participant_id}`
       );
+      // Store username for new participant
+      if (message.username && message.participant_id) {
+        participantUsernames[message.participant_id] = message.username;
+        // Update existing element title if it exists
+        const displayName = getDisplayName(message.participant_id);
+        updateVideoElementTitle(message.participant_id, displayName);
+      }
       // Existing participants receive this when a new participant joins
       // They should create a peer connection and wait for an offer from the new joiner
       // Ensure localStream is ready before creating peer connection
@@ -672,13 +704,21 @@ export async function handleSignalingData(message: any) {
         console.log(
           `[WebRTC] Creating placeholder UI element for new participant: ${message.participant_id}`
         );
-        addPlaceholderVideoElement(message.participant_id);
+        const displayName = getDisplayName(message.participant_id);
+        addPlaceholderVideoElement(message.participant_id, displayName);
       }
 
       await createPeerConnection(message.participant_id, false);
       break;
 
     case "participant_left":
+      // Clean up username when participant leaves
+      if (
+        message.participant_id &&
+        participantUsernames[message.participant_id]
+      ) {
+        delete participantUsernames[message.participant_id];
+      }
       closePeerConnection(message.participant_id);
       break;
 
@@ -1151,8 +1191,8 @@ export async function shareScreen() {
   try {
     const screenStreamConstraints: DisplayMediaStreamConstraints = {
       video: {
-        width: { ideal: window.screen.width },
-        height: { ideal: window.screen.height },
+        width: { ideal: window.screen.width * window.devicePixelRatio },
+        height: { ideal: window.screen.height * window.devicePixelRatio },
         frameRate: { ideal: 30 },
         cursor: "always",
       } as MediaTrackConstraints,
@@ -1179,7 +1219,8 @@ export async function shareScreen() {
       } video and ${localScreenStream.getAudioTracks().length} audio tracks`
     );
 
-    addScreenShare(localScreenStream, myId || "unknown");
+    const myDisplayName = myId ? getDisplayName(myId) : undefined;
+    addScreenShare(localScreenStream, myId || "unknown", myDisplayName);
 
     for (const [peerId, pc] of Object.entries(peerConnections)) {
       localScreenStream
@@ -1298,7 +1339,8 @@ function handleRemoteVideoTrackState(
 
   // Ensure placeholder exists
   if (!placeholder) {
-    addPlaceholderVideoElement(participantId);
+    const displayName = getDisplayName(participantId);
+    addPlaceholderVideoElement(participantId, displayName);
     placeholder = document.getElementById(`placeholder-${participantId}`);
   }
 
@@ -1400,8 +1442,25 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
           }
         });
         // If we're the offerer and connection is stable, create a new offer with tracks
-        if (pc.signalingState === "stable") {
+        // Check negotiation lock to prevent concurrent negotiations
+        if (
+          pc.signalingState === "stable" &&
+          !negotiationInProgress[targetId]
+        ) {
+          negotiationInProgress[targetId] = true;
           try {
+            // Wait a bit after adding tracks to ensure they're registered
+            await new Promise((resolve) => setTimeout(resolve, 100));
+
+            // Double-check state is still stable after delay
+            if (pc.signalingState !== "stable") {
+              console.warn(
+                `[WebRTC] Signaling state changed to ${pc.signalingState} after adding tracks, skipping offer creation for ${targetId}`
+              );
+              negotiationInProgress[targetId] = false;
+              return;
+            }
+
             const offerOptions: RTCOfferOptions = {
               offerToReceiveAudio: true,
               offerToReceiveVideo: true,
@@ -1419,12 +1478,18 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
                 offer: offer,
               });
             }
+            negotiationInProgress[targetId] = false;
           } catch (error) {
+            negotiationInProgress[targetId] = false;
             console.error(
               `[WebRTC] Error creating updated offer for ${targetId}:`,
               error
             );
           }
+        } else if (negotiationInProgress[targetId]) {
+          console.log(
+            `[WebRTC] Negotiation already in progress for ${targetId}, skipping offer creation`
+          );
         }
       }
     }
@@ -1578,6 +1643,13 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
       console.log(
         `[WebRTC] Signaling state changed for ${targetId}: ${pc.signalingState}`
       );
+      // Clear negotiation lock when state returns to stable (negotiation complete)
+      if (pc.signalingState === "stable" && negotiationInProgress[targetId]) {
+        console.log(
+          `[WebRTC] Negotiation completed for ${targetId}, clearing lock`
+        );
+        negotiationInProgress[targetId] = false;
+      }
     }
   };
 
@@ -1641,7 +1713,8 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
   );
   if (!existingVideoWrapper) {
     console.log(`[WebRTC] Creating placeholder UI element for ${targetId}`);
-    addPlaceholderVideoElement(targetId);
+    const displayName = getDisplayName(targetId);
+    addPlaceholderVideoElement(targetId, displayName);
   }
 
   pc.ontrack = (event) => {
@@ -1707,7 +1780,8 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
           console.log(
             `[WebRTC] Detected screen share from ${targetId} (label: ${videoTrack.label})`
           );
-          addScreenShare(stream, targetId);
+          const displayName = getDisplayName(targetId);
+          addScreenShare(stream, targetId, displayName);
 
           // Listen for screen share track ending (when participant stops sharing)
           videoTrack.addEventListener("ended", () => {
@@ -1769,7 +1843,8 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
                   }
                 }
               } else {
-                addVideoElement(targetId, stream);
+                const displayName = getDisplayName(targetId);
+                addVideoElement(targetId, stream, displayName);
 
                 // Set up track state monitoring to toggle between video and placeholder
                 handleRemoteVideoTrackState(targetId, videoTrack);
@@ -1800,7 +1875,8 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
                 }
               }
             } else {
-              addVideoElement(targetId, stream);
+              const displayName = getDisplayName(targetId);
+              addVideoElement(targetId, stream, displayName);
 
               // Set up track state monitoring to toggle between video and placeholder
               handleRemoteVideoTrackState(targetId, videoTrack);
@@ -1949,6 +2025,14 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
       return;
     }
 
+    // Check if negotiation is already in progress
+    if (negotiationInProgress[targetId]) {
+      console.warn(
+        `[WebRTC] Negotiation already in progress for ${targetId}, skipping offer creation`
+      );
+      return;
+    }
+
     // Only create offer if in stable state
     if (pc.signalingState !== "stable") {
       console.warn(
@@ -1957,46 +2041,58 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
       return;
     }
 
-    // Ensure we have tracks added if localStream exists
-    // This is especially important for new joiners connecting to existing participants
-    if (localStream) {
-      const senders = pc.getSenders();
-      const localTracks = localStream.getTracks();
-      const hasAllTracks = localTracks.every((track) =>
-        senders.some((sender) => sender.track?.id === track.id)
-      );
-
-      if (!hasAllTracks) {
-        console.log(
-          `[WebRTC] Adding missing local tracks before creating offer for ${targetId}`
-        );
-        localTracks.forEach((track) => {
-          const hasTrack = senders.some(
-            (sender) => sender.track?.id === track.id
-          );
-          if (!hasTrack) {
-            const sender = pc.addTrack(track, localStream!);
-            if (sender.getParameters) {
-              const params = sender.getParameters();
-              if (params.encodings && params.encodings.length > 0) {
-                params.encodings[0].priority = "high";
-                params.encodings[0].networkPriority = "high";
-                sender.setParameters(params).catch((err) => {
-                  console.warn(
-                    `[WebRTC] Could not set ${track.kind} parameters for ${targetId}:`,
-                    err
-                  );
-                });
-              }
-            }
-          }
-        });
-        // Small delay to ensure tracks are fully registered before creating offer
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-    }
+    // Set negotiation lock
+    negotiationInProgress[targetId] = true;
 
     try {
+      // Ensure we have tracks added if localStream exists
+      // This is especially important for new joiners connecting to existing participants
+      if (localStream) {
+        const senders = pc.getSenders();
+        const localTracks = localStream.getTracks();
+        const hasAllTracks = localTracks.every((track) =>
+          senders.some((sender) => sender.track?.id === track.id)
+        );
+
+        if (!hasAllTracks) {
+          console.log(
+            `[WebRTC] Adding missing local tracks before creating offer for ${targetId}`
+          );
+          localTracks.forEach((track) => {
+            const hasTrack = senders.some(
+              (sender) => sender.track?.id === track.id
+            );
+            if (!hasTrack) {
+              const sender = pc.addTrack(track, localStream!);
+              if (sender.getParameters) {
+                const params = sender.getParameters();
+                if (params.encodings && params.encodings.length > 0) {
+                  params.encodings[0].priority = "high";
+                  params.encodings[0].networkPriority = "high";
+                  sender.setParameters(params).catch((err) => {
+                    console.warn(
+                      `[WebRTC] Could not set ${track.kind} parameters for ${targetId}:`,
+                      err
+                    );
+                  });
+                }
+              }
+            }
+          });
+          // Wait longer to ensure tracks are fully registered and state is stable
+          await new Promise((resolve) => setTimeout(resolve, 100));
+
+          // Double-check state is still stable after adding tracks
+          if (pc.signalingState !== "stable") {
+            console.warn(
+              `[WebRTC] Signaling state changed to ${pc.signalingState} after adding tracks, aborting offer creation for ${targetId}`
+            );
+            negotiationInProgress[targetId] = false;
+            return;
+          }
+        }
+      }
+
       // Verify we have senders before creating offer
       const sendersBeforeOffer = pc.getSenders();
       console.log(
@@ -2061,12 +2157,17 @@ async function createPeerConnection(targetId: string, isOfferer: boolean) {
         };
         sendWebSocketMessage(offerMessage);
         console.log(`[WebRTC] Offer sent to ${targetId} via WebSocket`);
+
+        // Clear negotiation lock after successful offer creation
+        // Note: We'll clear it when we receive the answer or on error
       } else {
         console.warn(
           `[WebRTC] Cannot set local offer, signaling state changed to ${pc.signalingState} for ${targetId}`
         );
+        negotiationInProgress[targetId] = false;
       }
     } catch (error) {
+      negotiationInProgress[targetId] = false;
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error(
@@ -2111,6 +2212,18 @@ export function getLocalScreenStream() {
 
 export function getMyId() {
   return myId;
+}
+
+// Helper function to get display name for a participant
+// Returns "You" for current user, username for others, or fallback
+export function getDisplayName(participantId: string): string {
+  if (participantId === myId) {
+    return "You";
+  }
+  return (
+    participantUsernames[participantId] ||
+    `Participant ${participantId.substring(0, 8)}...`
+  );
 }
 
 export function stopLocalStream() {
@@ -2394,7 +2507,10 @@ async function handleAnswer(
       console.log(
         `[WebRTC] Set remote answer from ${senderId}, connection established`
       );
+      // Clear negotiation lock after successful answer
+      negotiationInProgress[senderId] = false;
     } catch (error) {
+      negotiationInProgress[senderId] = false;
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       console.error(
@@ -2406,6 +2522,8 @@ async function handleAnswer(
       }
     }
   } else {
+    // Clear negotiation lock even if state is wrong
+    negotiationInProgress[senderId] = false;
     console.warn(
       `[WebRTC] Cannot set remote answer, signaling state is ${pc.signalingState} (expected have-local-offer) for ${senderId}`
     );

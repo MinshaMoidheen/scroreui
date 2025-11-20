@@ -95,6 +95,9 @@ export default function MeetingRoomPage() {
 
   const meeting = meetings.find((m) => m._id === meetingId)
   const divisionId = meeting?.section?._id || meeting?.courseClass?._id || ''
+  
+  // Check if user is a teacher (for showing recording button)
+  const isTeacher = user?.role === 'teacher' || getUserRole() === 'teacher'
 
   useEffect(() => {
     if (!meetingId || !user) return
@@ -424,27 +427,31 @@ export default function MeetingRoomPage() {
               )}
             </Button>
 
-            {!isRecording ? (
-              <Button
-                variant="default"
-                size="lg"
-                onClick={handleStartRecording}
-                className="rounded-full gap-2"
-                disabled={!isInitialized || !divisionId}
-              >
-                <Play className="h-5 w-5" />
-                Start Recording
-              </Button>
-            ) : (
-              <Button
-                variant="destructive"
-                size="lg"
-                onClick={handleStopRecording}
-                className="rounded-full gap-2"
-              >
-                <Square className="h-5 w-5" />
-                Stop Recording
-              </Button>
+            {isTeacher && (
+              <>
+                {!isRecording ? (
+                  <Button
+                    variant="default"
+                    size="lg"
+                    onClick={handleStartRecording}
+                    className="rounded-full gap-2"
+                    disabled={!isInitialized || !divisionId}
+                  >
+                    <Play className="h-5 w-5" />
+                    Start Recording
+                  </Button>
+                ) : (
+                  <Button
+                    variant="destructive"
+                    size="lg"
+                    onClick={handleStopRecording}
+                    className="rounded-full gap-2"
+                  >
+                    <Square className="h-5 w-5" />
+                    Stop Recording
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </div>
