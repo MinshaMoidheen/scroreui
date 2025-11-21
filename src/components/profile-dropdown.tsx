@@ -22,6 +22,8 @@ export function ProfileDropdown() {
   const { user, logout } = useAuth()
   const [logoutMutation, { isLoading }] = useLogoutMutation()
 
+  console.log('User in ProfileDropdown:', user)
+
   const handleLogout = async () => {
     try {
       await logoutMutation().unwrap()
@@ -58,7 +60,7 @@ export function ProfileDropdown() {
               {user?.username || 'User'}
             </p>
             <p className='text-xs leading-none text-muted-foreground'>
-              {user?.email || 'user@example.com'}
+              {user?.email}
             </p>
           </div>
         </DropdownMenuLabel>

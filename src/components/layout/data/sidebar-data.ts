@@ -22,7 +22,7 @@ const getUserFromStorage = () => {
       const user = JSON.parse(storedUser)
       return {
         name: user.username || user.name || 'User',
-        email: user.email || 'user@example.com',
+        email: user.email,
         avatar: user.avatar || '/avatars/default.svg',
         role: user.role || 'admin',
       }
