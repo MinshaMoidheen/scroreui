@@ -216,13 +216,43 @@ export default function TeachersPage() {
 
   const handleModalSubmit = async (data: any) => {
     try {
+      // Validate required fields
+      if (!data.username || !data.email) {
+        toast({
+          title: 'Error',
+          description: 'Username and email are required.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      // Extract validated values
+      const teacherEmail = data.email.trim().toLowerCase()
+      const teacherUsername = data.username.trim()
+
+      // Check for duplicate email before submitting
+      const duplicate = teachers.find(
+        (t) =>
+          t.email?.toLowerCase().trim() === teacherEmail &&
+          t._id !== editingTeacher?._id // Exclude current teacher when editing
+      )
+
+      if (duplicate) {
+        toast({
+          title: 'Error',
+          description: 'This email is already in use.',
+          variant: 'destructive',
+        })
+        return
+      }
+
       if (editingTeacher) {
         // Update existing teacher
         await updateTeacher({
           id: editingTeacher._id,
           data: {
-            username: data.username,
-            email: data.email,
+            username: teacherUsername,
+            email: data.email.trim(),
             password: data.password,
           }
         }).unwrap()
@@ -231,10 +261,19 @@ export default function TeachersPage() {
           description: 'Teacher updated successfully.',
         })
       } else {
+        // Validate password for new teachers
+        if (!data.password || data.password.trim() === '') {
+          toast({
+            title: 'Error',
+            description: 'Password is required for new teachers.',
+            variant: 'destructive',
+          })
+          return
+        }
         // Create new teacher
         await createTeacher({
-          username: data.username,
-          email: data.email,
+          username: teacherUsername,
+          email: data.email.trim(),
           password: data.password,
         }).unwrap()
         toast({
@@ -246,9 +285,25 @@ export default function TeachersPage() {
       setEditingTeacher(null)
     } catch (error: any) {
       console.error('Error saving teacher:', error)
+      // Check if it's a duplicate email error from backend
+      let errorMessage = 'Failed to save teacher. Please try again.'
+      if (error && typeof error === 'object' && 'data' in error) {
+        const errorData = error.data as any
+        if (errorData?.error || errorData?.message) {
+          const msg = errorData.error || errorData.message
+          if (typeof msg === 'string') {
+            // Check for duplicate email error
+            if (msg.includes('email') && (msg.includes('already') || msg.includes('in use') || msg.includes('duplicate'))) {
+              errorMessage = 'This email is already in use.'
+            } else {
+              errorMessage = msg
+            }
+          }
+        }
+      }
       toast({
         title: 'Error',
-        description: error?.data?.message || 'Failed to save teacher. Please try again.',
+        description: errorMessage,
         variant: 'destructive',
       })
     }

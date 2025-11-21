@@ -30,7 +30,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useGetCourseClassesQuery } from '@/store/api/courseClassApi'
-import { Section, CreateSectionRequest, UpdateSectionRequest } from '@/store/api/sectionApi'
+import { Section, CreateSectionRequest, UpdateSectionRequest, useGetSectionsQuery } from '@/store/api/sectionApi'
 
 const sectionFormSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100, 'Name must be less than 100 characters'),
@@ -58,6 +58,8 @@ export function SectionModal({
   
   // Get course classes from API
   const { data: courseClasses = [], isLoading: courseClassesLoading } = useGetCourseClassesQuery()
+  // Get existing sections to check for duplicates
+  const { data: existingSections = [] } = useGetSectionsQuery()
 
   const form = useForm<SectionFormValues>({
     resolver: zodResolver(sectionFormSchema),
@@ -66,6 +68,20 @@ export function SectionModal({
       courseClass: '',
     },
   })
+
+  // Custom validation function for duplicates
+  const validateDuplicate = (name: string, courseClass: string): string | undefined => {
+    const duplicate = existingSections.find(
+      (s) =>
+        s.name.toLowerCase().trim() === name.toLowerCase().trim() &&
+        s.courseClass._id === courseClass &&
+        s._id !== section?._id // Exclude current section when editing
+    )
+    if (duplicate) {
+      return 'A section with this name already exists for the selected course class.'
+    }
+    return undefined
+  }
 
   useEffect(() => {
     if (section) {
@@ -82,6 +98,16 @@ export function SectionModal({
   }, [section, form])
 
   const handleSubmit = async (data: SectionFormValues) => {
+    // Check for duplicates before submitting
+    const duplicateError = validateDuplicate(data.name, data.courseClass)
+    if (duplicateError) {
+      form.setError('name', {
+        type: 'manual',
+        message: duplicateError,
+      })
+      return
+    }
+
     setIsSubmitting(true)
     try {
       await onSubmit(data)
@@ -125,6 +151,22 @@ export function SectionModal({
                       placeholder="Enter section name"
                       {...field}
                       disabled={isLoading || isSubmitting}
+                      onChange={(e) => {
+                        field.onChange(e)
+                        // Re-validate when name changes
+                        const courseClassValue = form.getValues('courseClass')
+                        if (courseClassValue && e.target.value) {
+                          const duplicateError = validateDuplicate(e.target.value, courseClassValue)
+                          if (duplicateError) {
+                            form.setError('name', {
+                              type: 'manual',
+                              message: duplicateError,
+                            })
+                          } else {
+                            form.clearErrors('name')
+                          }
+                        }
+                      }}
                     />
                   </FormControl>
                   <FormMessage />
@@ -138,7 +180,22 @@ export function SectionModal({
                 <FormItem>
                   <FormLabel>Course Class</FormLabel>
                   <Select
-                    onValueChange={field.onChange}
+                    onValueChange={(value) => {
+                      field.onChange(value)
+                      // Re-validate name when course class changes
+                      const nameValue = form.getValues('name')
+                      if (nameValue) {
+                        const duplicateError = validateDuplicate(nameValue, value)
+                        if (duplicateError) {
+                          form.setError('name', {
+                            type: 'manual',
+                            message: duplicateError,
+                          })
+                        } else {
+                          form.clearErrors('name')
+                        }
+                      }
+                    }}
                     defaultValue={field.value}
                     disabled={isLoading || isSubmitting}
                   >

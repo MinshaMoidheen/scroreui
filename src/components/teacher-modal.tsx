@@ -25,12 +25,13 @@ import { Input } from '@/components/ui/input'
 import { 
   type User as Teacher,
   type CreateUserRequest as CreateTeacherRequest,
-  type UpdateUserRequest as UpdateTeacherRequest
+  type UpdateUserRequest as UpdateTeacherRequest,
+  useGetTeachersQuery
 } from '@/store/api/userApi'
 
 const teacherFormSchema = z.object({
   username: z.string().min(1, 'Username is required').max(50, 'Username must be less than 50 characters'),
-  email: z.string().min(1, 'Email is required'),
+  email: z.string().min(1, 'Email is required').email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters').max(100, 'Password must be less than 100 characters').optional().or(z.literal('')),
 })
 
@@ -52,6 +53,9 @@ export function TeacherModal({
   isLoading = false,
 }: TeacherModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  
+  // Get existing teachers to check for duplicate emails
+  const { data: existingTeachers = [] } = useGetTeachersQuery()
 
   const form = useForm<TeacherFormValues>({
     resolver: zodResolver(teacherFormSchema),
@@ -61,6 +65,19 @@ export function TeacherModal({
       password: '',
     },
   })
+
+  // Custom validation function for duplicate emails
+  const validateDuplicateEmail = (email: string): string | undefined => {
+    const duplicate = existingTeachers.find(
+      (t) =>
+        t.email?.toLowerCase().trim() === email.toLowerCase().trim() &&
+        t._id !== teacher?._id // Exclude current teacher when editing
+    )
+    if (duplicate) {
+      return 'This email is already in use'
+    }
+    return undefined
+  }
 
   useEffect(() => {
     if (teacher) {
@@ -79,6 +96,16 @@ export function TeacherModal({
   }, [teacher, form])
 
   const handleSubmit = async (data: TeacherFormValues) => {
+    // Check for duplicate email before submitting
+    const duplicateError = validateDuplicateEmail(data.email)
+    if (duplicateError) {
+      form.setError('email', {
+        type: 'manual',
+        message: duplicateError,
+      })
+      return
+    }
+
     setIsSubmitting(true)
     try {
       // Remove password from data if it's empty (for updates)
@@ -142,10 +169,25 @@ export function TeacherModal({
                   <FormLabel>Email *</FormLabel>
                   <FormControl>
                     <Input
-                      type="text"
+                      type="email"
                       placeholder="Enter email address"
                       {...field}
                       disabled={isLoading || isSubmitting}
+                      onChange={(e) => {
+                        field.onChange(e)
+                        // Re-validate when email changes
+                        if (e.target.value) {
+                          const duplicateError = validateDuplicateEmail(e.target.value)
+                          if (duplicateError) {
+                            form.setError('email', {
+                              type: 'manual',
+                              message: duplicateError,
+                            })
+                          } else {
+                            form.clearErrors('email')
+                          }
+                        }
+                      }}
                     />
                   </FormControl>
                   <FormMessage />

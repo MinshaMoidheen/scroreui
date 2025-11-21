@@ -232,13 +232,44 @@ export default function SectionsPage() {
 
   const handleModalSubmit = async (data: CreateSectionRequest | UpdateSectionRequest) => {
     try {
+      // Validate required fields
+      if (!data.name || !data.courseClass) {
+        toast({
+          title: 'Error',
+          description: 'Name and course class are required.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      // Extract validated values
+      const sectionName = data.name.trim()
+      const sectionCourseClass = data.courseClass
+
+      // Check for duplicates before submitting
+      const duplicate = sections.find(
+        (s) =>
+          s.name.toLowerCase().trim() === sectionName.toLowerCase() &&
+          s.courseClass._id === sectionCourseClass &&
+          s._id !== editingSection?._id // Exclude current section when editing
+      )
+
+      if (duplicate) {
+        toast({
+          title: 'Error',
+          description: 'A section with this name already exists for the selected course class.',
+          variant: 'destructive',
+        })
+        return
+      }
+
       if (editingSection) {
         // Update existing section
         await updateSection({
           id: editingSection._id,
           data: {
-            name: data.name,
-            courseClass: data.courseClass,
+            name: sectionName,
+            courseClass: sectionCourseClass,
           }
         }).unwrap()
         toast({
@@ -247,17 +278,9 @@ export default function SectionsPage() {
         })
       } else {
         // Create new section
-        if (!data.name || !data.courseClass) {
-          toast({
-            title: 'Error',
-            description: 'Name and course class are required.',
-            variant: 'destructive',
-          })
-          return
-        }
         await createSection({
-          name: data.name,
-          courseClass: data.courseClass,
+          name: sectionName,
+          courseClass: sectionCourseClass,
         }).unwrap()
         toast({
           title: 'Success',
@@ -268,7 +291,22 @@ export default function SectionsPage() {
       setEditingSection(null)
     } catch (error: unknown) {
       console.error('Error saving section:', error)
-      const errorMessage = (error && typeof error === 'object' && 'data' in error && typeof error.data === 'object' && error.data && 'message' in error && typeof (error.data as { message?: string }).message === 'string') ? (error.data as { message: string }).message : 'Failed to save section. Please try again.'
+      // Check if it's a duplicate error from backend
+      let errorMessage = 'Failed to save section. Please try again.'
+      if (error && typeof error === 'object' && 'data' in error) {
+        const errorData = error.data as any
+        if (errorData?.error || errorData?.message) {
+          const msg = errorData.error || errorData.message
+          if (typeof msg === 'string') {
+            // Check for duplicate key error
+            if (msg.includes('duplicate') || msg.includes('E11000') || msg.includes('already exists')) {
+              errorMessage = 'A section with this name already exists for the selected course class.'
+            } else {
+              errorMessage = msg
+            }
+          }
+        }
+      }
       toast({
         title: 'Error',
         description: errorMessage,
