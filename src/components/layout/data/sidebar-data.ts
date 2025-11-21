@@ -123,7 +123,7 @@ export const getSidebarData = (): SidebarData => {
     if (role === 'teacher') {
       // For teachers, show only My Folders (userFolders), My Meetings, and Recordings
       return allMenuItems.filter(item => 
-       item.title === 'My Folders' || item.title === 'My Meetings' || item.title === 'Recordings'
+       item.title === 'My Folders' || item.title === 'My Meetings' 
       )
     } else if (role === 'student') {
       // For students, show limited items (similar to teachers for now)

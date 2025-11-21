@@ -393,7 +393,7 @@ export default function ScreenRecordingsPage() {
         <TableHeader>
           <TableRow>
             <TableHead>Filename</TableHead>
-            <TableHead>Section</TableHead>
+            
             <TableHead>Created At</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -410,11 +410,7 @@ export default function ScreenRecordingsPage() {
             filteredRecordings.map((recording) => (
               <TableRow key={recording._id}>
                 <TableCell className="font-medium">{recording.filename}</TableCell>
-                <TableCell>
-                  {typeof recording.section === 'object' 
-                    ? recording.section?.name || 'Unknown'
-                    : 'Unknown'}
-                </TableCell>
+                
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
@@ -461,14 +457,14 @@ export default function ScreenRecordingsPage() {
                   <Calendar className="h-4 w-4" />
                   <span>{formatDate(recording.created_at)}</span>
                 </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                {/* <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <FileVideo className="h-4 w-4" />
                   <span>
                     {typeof recording.section === 'object' 
                       ? recording.section?.name || 'Unknown'
                       : 'Unknown'}
                   </span>
-                </div>
+                </div> */}
                 <Button
                   className="w-full mt-4"
                   onClick={() => handlePlayVideo(recording)}
