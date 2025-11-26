@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Plus, Edit, Trash2, User, List, Grid3X3, Search, Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -37,8 +37,11 @@ import {
   useCreateTeacherMutation,
   useUpdateTeacherMutation,
   useDeleteTeacherMutation,
-  type User as Teacher
+  type User as Teacher,
+  userApi
 } from '@/store/api/userApi'
+import { useDispatch } from 'react-redux'
+import type { AppDispatch } from '@/store/store'
 import { useAuth } from '@/context/auth-context'
 import { toast } from '@/hooks/use-toast'
 import {
@@ -74,11 +77,59 @@ export default function TeachersPage() {
     email: true,
     createdAt: true,
   })
+  const [allTeachers, setAllTeachers] = useState<Teacher[]>([])
+  const [isFetchingAll, setIsFetchingAll] = useState(false)
+  const dispatch = useDispatch<AppDispatch>()
   
   // API hooks - only call when authenticated
-  const { data: teachers = [], isLoading, error } = useGetTeachersQuery(undefined, {
-    skip: !isAuthenticated || authLoading
-  })
+  // Fetch first page with max limit (50) - when limit is 0, we fetch all pages
+  const { data: firstPageData, isLoading, error } = useGetTeachersQuery(
+    { limit: 0, offset: 0 },
+    {
+      skip: !isAuthenticated || authLoading
+    }
+  )
+
+  // Fetch all pages when limit is 0 (get all users)
+  useEffect(() => {
+    if (!firstPageData || !isAuthenticated || authLoading) {
+      setAllTeachers([])
+      setIsFetchingAll(false)
+      return
+    }
+
+    const fetchAllPages = async () => {
+      setIsFetchingAll(true)
+      let allUsers: Teacher[] = [...(firstPageData.users || [])]
+      let currentOffset = 50
+      const limit = 50
+      let hasMore = firstPageData.pagination?.hasMore ?? false
+
+      // Fetch additional pages if there are more
+      while (hasMore) {
+        try {
+          const result = await dispatch(
+            userApi.endpoints.getTeachers.initiate({ limit, offset: currentOffset })
+          ).unwrap()
+          
+          allUsers = [...allUsers, ...(result.users || [])]
+          hasMore = result.pagination?.hasMore ?? false
+          currentOffset += limit
+        } catch (err) {
+          console.error('Error fetching additional pages:', err)
+          break
+        }
+      }
+
+      setAllTeachers(allUsers)
+      setIsFetchingAll(false)
+    }
+
+    fetchAllPages()
+  }, [firstPageData, isAuthenticated, authLoading, dispatch])
+
+  // Use allTeachers for the table data, fallback to first page if still loading
+  const teachers: Teacher[] = allTeachers.length > 0 ? allTeachers : (firstPageData?.users || [])
   const [createTeacher, { isLoading: isCreating }] = useCreateTeacherMutation()
   const [updateTeacher, { isLoading: isUpdating }] = useUpdateTeacherMutation()
   const [deleteTeacher, { isLoading: isDeleting }] = useDeleteTeacherMutation()
@@ -100,12 +151,15 @@ export default function TeachersPage() {
             </Button>
           )
         },
-        cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">{row.getValue('username')}</span>
-          </div>
-        ),
+        cell: ({ row }) => {
+          const username = row.getValue('username') as string
+          return (
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">{username || 'N/A'}</span>
+            </div>
+          )
+        },
         enableSorting: true,
         enableHiding: false,
       },
@@ -216,43 +270,13 @@ export default function TeachersPage() {
 
   const handleModalSubmit = async (data: any) => {
     try {
-      // Validate required fields
-      if (!data.username || !data.email) {
-        toast({
-          title: 'Error',
-          description: 'Username and email are required.',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      // Extract validated values
-      const teacherEmail = data.email.trim().toLowerCase()
-      const teacherUsername = data.username.trim()
-
-      // Check for duplicate email before submitting
-      const duplicate = teachers.find(
-        (t) =>
-          t.email?.toLowerCase().trim() === teacherEmail &&
-          t._id !== editingTeacher?._id // Exclude current teacher when editing
-      )
-
-      if (duplicate) {
-        toast({
-          title: 'Error',
-          description: 'This email is already in use.',
-          variant: 'destructive',
-        })
-        return
-      }
-
       if (editingTeacher) {
         // Update existing teacher
         await updateTeacher({
           id: editingTeacher._id,
           data: {
-            username: teacherUsername,
-            email: data.email.trim(),
+            username: data.username,
+            email: data.email,
             password: data.password,
           }
         }).unwrap()
@@ -261,19 +285,10 @@ export default function TeachersPage() {
           description: 'Teacher updated successfully.',
         })
       } else {
-        // Validate password for new teachers
-        if (!data.password || data.password.trim() === '') {
-          toast({
-            title: 'Error',
-            description: 'Password is required for new teachers.',
-            variant: 'destructive',
-          })
-          return
-        }
         // Create new teacher
         await createTeacher({
-          username: teacherUsername,
-          email: data.email.trim(),
+          username: data.username,
+          email: data.email,
           password: data.password,
         }).unwrap()
         toast({
@@ -285,25 +300,9 @@ export default function TeachersPage() {
       setEditingTeacher(null)
     } catch (error: any) {
       console.error('Error saving teacher:', error)
-      // Check if it's a duplicate email error from backend
-      let errorMessage = 'Failed to save teacher. Please try again.'
-      if (error && typeof error === 'object' && 'data' in error) {
-        const errorData = error.data as any
-        if (errorData?.error || errorData?.message) {
-          const msg = errorData.error || errorData.message
-          if (typeof msg === 'string') {
-            // Check for duplicate email error
-            if (msg.includes('email') && (msg.includes('already') || msg.includes('in use') || msg.includes('duplicate'))) {
-              errorMessage = 'This email is already in use.'
-            } else {
-              errorMessage = msg
-            }
-          }
-        }
-      }
       toast({
         title: 'Error',
-        description: errorMessage,
+        description: error?.data?.message || 'Failed to save teacher. Please try again.',
         variant: 'destructive',
       })
     }
@@ -330,46 +329,48 @@ export default function TeachersPage() {
   }
 
   const renderListView = () => (
-    <div className="space-y-4">
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
+    <div className="flex flex-col h-full">
+      <div className="rounded-md border overflow-hidden flex-1 flex flex-col min-h-0">
+        <div className="overflow-y-auto flex-1">
+          <Table>
+            <TableHeader className="sticky top-0 bg-background z-10">
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id}>
+                  {headerGroup.headers.map((header) => (
+                    <TableHead key={header.id}>
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
                   ))}
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center">
-                  No results.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows?.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id}>
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="h-24 text-center">
+                    No results.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
       
       {/* Pagination Controls */}
-      <div className="flex items-center justify-between px-2">
+      <div className="flex items-center justify-between px-2 pt-4 flex-shrink-0">
         <div className="flex-1 text-sm text-muted-foreground">
           Showing {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1} to{' '}
           {Math.min(
@@ -456,14 +457,14 @@ export default function TeachersPage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <User className="h-5 w-5 text-primary" />
-                      <CardTitle className="text-lg">{teacher.username}</CardTitle>
+                      <CardTitle className="text-lg">{teacher.username || 'N/A'}</CardTitle>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="space-y-2">
                     <div className="text-sm text-muted-foreground">
-                      {teacher.email}
+                      {teacher.email || 'N/A'}
                     </div>
                    
                   </div>
@@ -485,98 +486,100 @@ export default function TeachersPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Teachers</h1>
-          <p className="text-muted-foreground">
-            Manage teachers and their assignments
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center border rounded-lg p-1">
-            <Button
-              variant={viewMode === 'list' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('list')}
-              className="h-8 px-3"
-            >
-              <List className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'grid' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('grid')}
-              className="h-8 px-3"
-            >
-              <Grid3X3 className="h-4 w-4" />
+    <div className="h-full flex flex-col overflow-hidden px-4 py-6">
+      <div className="flex-shrink-0 space-y-6 pb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Teachers</h1>
+            {/* <p className="text-muted-foreground">
+              Manage teachers and their assignments
+            </p> */}
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center border rounded-lg p-1">
+              <Button
+                variant={viewMode === 'list' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('list')}
+                className="h-8 px-3"
+              >
+                <List className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'grid' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('grid')}
+                className="h-8 px-3"
+              >
+                <Grid3X3 className="h-4 w-4" />
+              </Button>
+            </div>
+            <Button onClick={handleCreate} disabled={isCreating}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Teacher
             </Button>
           </div>
-          <Button onClick={handleCreate} disabled={isCreating}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Teacher
-          </Button>
+        </div>
+
+        {/* Search and Filters */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search teachers..."
+                value={globalFilter ?? ''}
+                onChange={(event) => setGlobalFilter(String(event.target.value))}
+                className="pl-8"
+              />
+            </div>
+            
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {table.getFilteredRowModel().rows.length} of {teachers.length} teachers
+          </div>
         </div>
       </div>
 
-      {/* Search and Filters */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search teachers..."
-              value={globalFilter ?? ''}
-              onChange={(event) => setGlobalFilter(String(event.target.value))}
-              className="pl-8"
-            />
+       <div className="flex-1 min-h-0 overflow-hidden">
+         {authLoading || isLoading || isFetchingAll ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {authLoading ? 'Authenticating...' : 'Loading teachers...'}
+              </p>
+            </div>
           </div>
-          
-        </div>
-        <div className="text-sm text-muted-foreground">
-          {table.getFilteredRowModel().rows.length} of {teachers.length} teachers
-        </div>
+        ) : error ? (
+          <div className="text-center py-8">
+            <User className="mx-auto h-12 w-12 text-muted-foreground" />
+            <h3 className="mt-2 text-sm font-semibold text-gray-900">Error loading teachers</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              There was an error loading the teachers. Please try again.
+            </p>
+          </div>
+        ) : teachers.length === 0 ? (
+          <div className="text-center py-8">
+            <User className="mx-auto h-12 w-12 text-muted-foreground" />
+            <h3 className="mt-2 text-sm font-semibold text-gray-900">No teachers</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Get started by creating a new teacher.
+            </p>
+            <div className="mt-6">
+              <Button onClick={handleCreate}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Teacher
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {viewMode === 'list' && renderListView()}
+            {viewMode === 'grid' && renderGridView()}
+          </>
+        )}
       </div>
-
-     <div>
-       {authLoading || isLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {authLoading ? 'Authenticating...' : 'Loading teachers...'}
-                </p>
-              </div>
-            </div>
-          ) : error ? (
-            <div className="text-center py-8">
-              <User className="mx-auto h-12 w-12 text-muted-foreground" />
-              <h3 className="mt-2 text-sm font-semibold text-gray-900">Error loading teachers</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                There was an error loading the teachers. Please try again.
-              </p>
-            </div>
-          ) : teachers.length === 0 ? (
-            <div className="text-center py-8">
-              <User className="mx-auto h-12 w-12 text-muted-foreground" />
-              <h3 className="mt-2 text-sm font-semibold text-gray-900">No teachers</h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Get started by creating a new teacher.
-              </p>
-              <div className="mt-6">
-                <Button onClick={handleCreate}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Teacher
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              {viewMode === 'list' && renderListView()}
-              {viewMode === 'grid' && renderGridView()}
-            </>
-          )}
-     </div>
 
       {/* Add/Edit Modal */}
       <TeacherModal

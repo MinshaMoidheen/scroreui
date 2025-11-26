@@ -28,6 +28,12 @@ export interface GetUsersResponse {
   total: number
   limit: number
   offset: number
+  pagination?: {
+    currentPage: number
+    totalPages: number
+    hasMore: boolean
+    totalItems: number
+  }
 }
 
 export interface CreateTeacherRequest {
@@ -80,28 +86,43 @@ export const userApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ['User'],
     }),
-    // Teacher-specific endpoints (users with role 'teacher')
-    getTeachers: builder.query<User[], void>({
-      query: () => ({
-        url: USER_URL,
-        method: 'GET',
-        
-      }),
-      providesTags: ['User'],
-      transformResponse: (response: GetUsersResponse) => {
-        // Filter to only show users with role 'teacher'
-        return response.users.filter(user => user.role === 'teacher')
+    // Teacher-specific endpoints (users with role 'user' - teachers are users with role 'user' in this system)
+    getTeachers: builder.query<GetUsersResponse, { limit?: number; offset?: number } | void>({
+      query: (params) => {
+        const queryParams = new URLSearchParams()
+        if (params && typeof params === 'object') {
+          // Backend requires limit between 1-50, so we use max limit (50) when limit is 0
+          const limit = params.limit === 0 ? 50 : (params.limit || 50)
+          const offset = params.offset || 0
+          queryParams.set('limit', limit.toString())
+          queryParams.set('offset', offset.toString())
+        } else {
+          // Default to max limit when no params
+          queryParams.set('limit', '50')
+          queryParams.set('offset', '0')
+        }
+        const queryString = queryParams.toString()
+        return {
+          url: `${USER_URL}?${queryString}`,
+          method: 'GET',
+        }
       },
+      providesTags: ['User'],
     }),
     createTeacher: builder.mutation<{ message: string; user: User }, Omit<CreateUserRequest, 'role'>>({
-      query: (teacher) => ({
-        url: USER_URL,
-        method: 'POST',
-        body: {
-          ...teacher,
-          role: 'teacher' as const,
-        },
-      }),
+      query: (teacher) => {
+        // Explicitly construct body with only required fields and set role to 'user'
+        return {
+          url: USER_URL,
+          method: 'POST',
+          body: {
+            username: teacher.username,
+            email: teacher.email,
+            password: teacher.password,
+            role: 'user' as const,
+          },
+        }
+      },
       invalidatesTags: ['User'],
     }),
     updateTeacher: builder.mutation<{ message: string; user: User }, { id: string; data: UpdateUserRequest }>({
