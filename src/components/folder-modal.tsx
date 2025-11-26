@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -92,9 +92,41 @@ export function FolderModal({
 
   // Fetch data for dropdowns
   const { data: courseClasses = [] } = useGetCourseClassesQuery()
-  const { data: sections = [] } = useGetSectionsQuery()
+  const { data: allSections = [] } = useGetSectionsQuery()
   const { data: subjects = [] } = useGetSubjectsQuery()
-  const { data: teachers = [] } = useGetTeachersQuery()
+  const { data: teachersData } = useGetTeachersQuery({ limit: 0, offset: 0 })
+  const teachers = teachersData?.users || []
+
+  // Watch the selected course class to filter sections
+  const selectedCourseClassId = form.watch('courseClass')
+  
+  // Filter sections based on selected class (show all if no class selected)
+  const sections = useMemo(() => {
+    if (!selectedCourseClassId) {
+      return allSections
+    }
+    return allSections.filter(section => 
+      section.courseClass?._id === selectedCourseClassId
+    )
+  }, [allSections, selectedCourseClassId])
+
+  // Reset section and subject when course class changes
+  useEffect(() => {
+    if (selectedCourseClassId) {
+      const currentSection = form.getValues('section')
+      // Check if current section belongs to the selected class
+      const sectionBelongsToClass = currentSection && sections.some(s => s._id === currentSection)
+      
+      if (!sectionBelongsToClass) {
+        form.setValue('section', '')
+        form.setValue('subject', '')
+      }
+    } else {
+      // If no class selected, clear section and subject
+      form.setValue('section', '')
+      form.setValue('subject', '')
+    }
+  }, [selectedCourseClassId, form, sections])
 
   // Reset form when folder changes
   useEffect(() => {

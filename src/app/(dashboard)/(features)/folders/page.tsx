@@ -595,15 +595,15 @@ export default function FoldersPage() {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <BookOpen className="h-3 w-3" />
-                      {folder.courseClass?.name || 'No Class'}
+                      {folder.courseClass?.name || 'Null'}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Users className="h-3 w-3" />
-                      {folder.section?.name || 'No Section'}
+                      {folder.section?.name || 'Null'}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <GraduationCap className="h-3 w-3" />
-                      {folder.subject?.name || 'No Subject'}
+                      {folder.subject?.name || 'Null'}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <UserCheck className="h-3 w-3" />
