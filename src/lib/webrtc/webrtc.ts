@@ -29,6 +29,25 @@ let recordingPeerConnection: RTCPeerConnection | null = null;
 let recordingSessionId: string | null = null;
 const peerConnections: Record<string, RTCPeerConnection> = {};
 let recordingClonedTracks: MediaStreamTrack[] = [];
+let recordingMicSender: RTCRtpSender | null = null; // Track sender for microphone in recording
+let dummyAudioTrack: MediaStreamTrack | null = null; // Helper to reuse silence track
+let dummyAudioContext: AudioContext | null = null;
+
+// Helper to create a silent audio track
+function createSilentAudioTrack(): MediaStreamTrack {
+  dummyAudioContext = new AudioContext();
+  const ctx = dummyAudioContext;
+  const oscillator = ctx.createOscillator();
+  const gain = ctx.createGain();
+  gain.gain.value = 0; // Mute
+  const dst = ctx.createMediaStreamDestination();
+  oscillator.connect(gain);
+  gain.connect(dst);
+  oscillator.start();
+  const track = dst.stream.getAudioTracks()[0];
+  return track;
+}
+
 const participantUsernames: Record<string, string> = {}; // Map participantId -> username
 
 // Negotiation lock to prevent concurrent offer creation
@@ -263,17 +282,25 @@ export async function startRecording(
     console.log(`[Recording] starting with mic tracks: ${audioTracks.length}`);
     logAvailableAudioTracks("mic-original", localStream);
 
+    // Reset recording state
+    recordingMicSender = null;
+    dummyAudioTrack = createSilentAudioTrack();
+    
+    let trackToAdd: MediaStreamTrack;
+
     if (audioTracks.length === 0) {
       console.warn(
-        "[Recording] No microphone audio tracks found! This will result in silent recording."
+        "[Recording] No microphone audio tracks found! Using silent dummy track."
       );
-    }
-
-    // Clone and add microphone audio tracks
-    audioTracks.forEach((track) => {
+      trackToAdd = dummyAudioTrack;
+    } else {
+      // Use the first audio track as the primary microphone track
+      const track = audioTracks[0];
       const clone = track.clone();
       clone.enabled = true;
       recordingClonedTracks.push(clone);
+      trackToAdd = clone;
+
       console.log(
         `[Recording] cloned mic track id=${track.id} original.enabled=${track.enabled} clone.enabled=${clone.enabled} readyState=${clone.readyState} muted=${clone.muted}`
       );
@@ -300,10 +327,17 @@ export async function startRecording(
       };
 
       setTimeout(checkAudio, 500);
-      if (recordingPeerConnection) {
-        recordingPeerConnection.addTrack(clone, new MediaStream([clone]));
-      }
-    });
+    }
+
+    // Add the selected track (mic clone or dummy) to the peer connection
+    if (recordingPeerConnection) {
+      // Create a stream for the track
+      const stream = new MediaStream([trackToAdd]);
+      recordingMicSender = recordingPeerConnection.addTrack(trackToAdd, stream);
+      console.log(
+        `[Recording] Added audio track (id=${trackToAdd.id}, kind=${trackToAdd.kind}) to recording peer connection. Sender created.`
+      );
+    }
 
     // Add screen video track and any screen audio tracks to recording
     if (recordingScreenStream && recordingPeerConnection) {
@@ -543,6 +577,18 @@ export function stopRecording() {
     recordingPeerConnection.close();
     recordingPeerConnection = null;
     recordingSessionId = null;
+    
+    // Cleanup recording specific globals
+    recordingMicSender = null;
+    if (dummyAudioTrack) {
+      dummyAudioTrack.stop();
+      dummyAudioTrack = null;
+    }
+    if (dummyAudioContext) {
+      dummyAudioContext.close();
+      dummyAudioContext = null;
+    }
+
     console.log(
       "Recording stopped, all tracks cleaned up, and connection closed."
     );
@@ -750,6 +796,20 @@ export async function toggleMic() {
       `[Mic] Disabling microphone - stopping ${audioTracks.length} audio track(s)`
     );
 
+    // Update recording sender to use silent dummy track BEFORE stopping tracks
+    // This ensures the sender has a valid track to switch to before the current one dies
+    if (recordingPeerConnection && recordingMicSender && dummyAudioTrack) {
+      console.log("[Mic] Switching recording audio to silent dummy track");
+      try {
+        // Just switch to dummy track. We don't need to stop the old track explicitly here
+        // because the loop below will stop all local tracks (including the one we just replaced if it was direct)
+        await recordingMicSender.replaceTrack(dummyAudioTrack);
+        console.log("[Mic] Successfully switched recording sender to silent dummy track");
+      } catch (err) {
+        console.error("[Mic] Error switching recording track to dummy:", err);
+      }
+    }
+
     // First, stop transmission to all peers
     for (const track of audioTracks) {
       for (const pc of Object.values(peerConnections)) {
@@ -938,6 +998,45 @@ export async function toggleMic() {
       console.log(
         `[Mic] Acquired new audio track id=${newAudioTrack.id} enabled=${newAudioTrack.enabled} readyState=${newAudioTrack.readyState}`
       );
+
+      // Update recording sender to use new microphone track DIRECTLY (no cloning)
+      if (recordingPeerConnection && recordingMicSender) {
+        console.log("[Mic] Switching recording audio to new microphone track");
+        try {
+          // Use the track directly - safer than cloning for reliability
+          // We rely on the fact that when we toggle mic OFF, we switch back to dummy track
+          // before stopping this track.
+          
+          // Debug audio levels on the new track
+          const audioContext = new AudioContext();
+          const source = audioContext.createMediaStreamSource(newStream);
+          const analyser = audioContext.createAnalyser();
+          source.connect(analyser);
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          
+          const checkAudio = () => {
+            if (analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                const sum = dataArray.reduce((a, b) => a + b, 0);
+                if (sum > 0) {
+                  console.log(`[Mic] New microphone track is producing audio! Level: ${sum}`);
+                  audioContext.close();
+                } else {
+                  // Check for a few seconds then give up logging
+                  if (audioContext.state !== 'closed') {
+                     setTimeout(checkAudio, 200); 
+                  }
+                }
+            }
+          };
+          checkAudio(); // Start checking
+          
+          await recordingMicSender.replaceTrack(newAudioTrack);
+          console.log(`[Mic] Successfully switched recording sender to new mic track (direct)`);
+        } catch (err) {
+          console.error("[Mic] Error switching recording track to mic:", err);
+        }
+      }
 
       // Notify UI of state change after enabling (with small delay to ensure stream is updated)
       if (onTrackStateChange) {
@@ -2288,6 +2387,12 @@ export function releaseAllMediaDevices() {
     }
   });
   recordingClonedTracks = [];
+
+  recordingMicSender = null;
+  if (dummyAudioTrack) {
+    dummyAudioTrack.stop();
+    dummyAudioTrack = null;
+  }
 
   console.log(
     "[Media] All media devices released - hardware is now available for other apps"
