@@ -67,7 +67,10 @@ export interface GetMyMeetingsParams {
 export const meetingApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getMeetings: builder.query<Meeting[], void>({
-      query: () => MEETING_URL,
+      query: () => ({
+        url: MEETING_URL,
+        method: 'GET',
+      }),
       providesTags: ['Meeting'],
     }),
     getMyMeetings: builder.query<Meeting[], GetMyMeetingsParams | void>({

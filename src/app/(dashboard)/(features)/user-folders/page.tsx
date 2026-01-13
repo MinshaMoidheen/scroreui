@@ -1327,7 +1327,7 @@ export default function UserFoldersPage() {
     const loadImageBlob = async () => {
       if (!isImageModalOpen || !selectedImageFile) return
       try {
-        const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent(selectedImageFile.filename)}`
+        const url = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent(selectedImageFile.filename)}`
         const response = await fetch(url)
         if (!response.ok) {
           console.error('Image fetch failed:', response.status, response.statusText)
@@ -1620,7 +1620,7 @@ export default function UserFoldersPage() {
   const handleViewFile = async (file: FileItem) => {
     // console.log('Opening file:', file)
     // console.log('File path:', file.path)
-    // console.log('Full URL:', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}${file.path}`)
+    // console.log('Full URL:', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}${file.path}`)
     
     // Track file open time
     setFileOpenStartTime(Date.now())
@@ -1658,7 +1658,7 @@ export default function UserFoldersPage() {
       setIsImageRecording(true);
     } else if (file.mimetype.includes('spreadsheet') || file.mimetype.includes('excel') || file.filename.endsWith('.xlsx') || file.filename.endsWith('.xls')) {
       // Handle Excel files - open in new tab for now
-      const serveUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent(file.filename)}`
+      const serveUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent(file.filename)}`
       window.open(serveUrl, '_blank')
     }
     
@@ -2028,7 +2028,7 @@ export default function UserFoldersPage() {
                         size="sm"
                         onClick={() => {
                           const link = document.createElement('a')
-                          link.href = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent(file.filename)}`
+                          link.href = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent(file.filename)}`
                           link.download = file.filename
                           link.click()
                         }}
@@ -2464,7 +2464,7 @@ export default function UserFoldersPage() {
                       <p className="text-sm">{videoError}</p>
                     </div>
                     <div className="space-y-2 text-sm text-muted-foreground">
-                      <p>Video URL: {`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedVideoFile)?.filename || '')}`}</p>
+                      <p>Video URL: {`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedVideoFile)?.filename || '')}`}</p>
                       <p>Try opening the video in a new tab or check if the file exists.</p>
                     </div>
                     <div className="mt-4 space-x-2">
@@ -2473,7 +2473,7 @@ export default function UserFoldersPage() {
                         onClick={() => {
                           const file = modalFileData || selectedVideoFile
                           if (file) {
-                            window.open(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent(file.filename)}`, '_blank')
+                            window.open(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent(file.filename)}`, '_blank')
                           }
                         }}
                       >
@@ -2499,9 +2499,9 @@ export default function UserFoldersPage() {
                   autoPlay
                       onError={(e) => {
                         console.error('Video load error:', e)
-                        console.error('Video src (original):', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}${(modalFileData || selectedVideoFile)?.path}`)
-                        console.error('Video src (encoded):', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}${encodeURI((modalFileData || selectedVideoFile)?.path || '')}`)
-                        console.error('Video src (serve endpoint):', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedVideoFile)?.filename || '')}`)
+                        console.error('Video src (original):', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}${(modalFileData || selectedVideoFile)?.path}`)
+                        console.error('Video src (encoded):', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}${encodeURI((modalFileData || selectedVideoFile)?.path || '')}`)
+                        console.error('Video src (serve endpoint):', `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedVideoFile)?.filename || '')}`)
                         console.error('Video element:', e.target)
                         console.error('Error details:', e.nativeEvent)
                         console.error('Video error code:', e.currentTarget.error?.code)
@@ -2578,11 +2578,11 @@ export default function UserFoldersPage() {
                       }}
                     >
                       <source 
-                        src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedVideoFile)?.filename || '')}`} 
+                        src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedVideoFile)?.filename || '')}`} 
                         type={(modalFileData || selectedVideoFile)?.mimetype} 
                       />
                       <source 
-                        src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedVideoFile)?.filename || '')}`} 
+                        src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedVideoFile)?.filename || '')}`} 
                         type="video/mp4" 
                       />
                   Your browser does not support the video tag.
@@ -2606,7 +2606,7 @@ export default function UserFoldersPage() {
                           <strong>Error:</strong> {videoError}
                         </p>
                         <p className="text-sm text-red-600 mt-2">
-                          Try opening the video directly: <a href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedVideoFile)?.filename || '')}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                          Try opening the video directly: <a href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedVideoFile)?.filename || '')}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                             Open Video
                           </a>
                         </p>
@@ -2782,7 +2782,7 @@ export default function UserFoldersPage() {
                   }}
                 >
                   <ReactPdfViewer
-                    src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedPdfFile)?.filename || '')}`}
+                    src={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedPdfFile)?.filename || '')}`}
                     className="w-full h-full"
                     onError={handlePdfError}
                   />
@@ -2984,12 +2984,12 @@ export default function UserFoldersPage() {
                 }}
               >
                 <img
-                  src={imageObjectUrl || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedImageFile)?.filename || '')}`}
+                  src={imageObjectUrl || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedImageFile)?.filename || '')}`}
                   alt={(modalFileData || selectedImageFile)?.filename}
                   className="max-w-full max-h-[80vh] object-contain rounded-lg shadow-lg"
                   onError={(e) => {
                     console.error('Image load error:', e)
-                    console.error('Image src:', imageObjectUrl || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5031'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedImageFile)?.filename || '')}`)
+                    console.error('Image src:', imageObjectUrl || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/files/serve/${encodeURIComponent((modalFileData || selectedImageFile)?.filename || '')}`)
                   }}
                 />
                 {showCanvas && (

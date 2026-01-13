@@ -72,9 +72,9 @@ export function RrwebSessionViewer({ events, sessionId, videoSrc, videoType, onC
         
         // Replace backend API URLs with proxy URLs in the events data
         // This ensures images load from same origin from the start
-        // Pattern 1: Full URLs with localhost:5031
+        // Pattern 1: Full URLs with localhost:5000
         let fixedEventsJson = eventsJson.replace(
-          /http:\/\/localhost:5031\/api\/v1\/files\/serve\/([^"'\s\)\?]+)([^"'\s\)]*)/g,
+          /http:\/\/localhost:5000\/api\/v1\/files\/serve\/([^"'\s\)\?]+)([^"'\s\)]*)/g,
           '/api/files/serve/$1$2'
         )
         
@@ -121,7 +121,7 @@ export function RrwebSessionViewer({ events, sessionId, videoSrc, videoType, onC
             if (typeof value === 'string') {
               // Replace backend API URLs
               fixed[key] = value
-                .replace(/http:\/\/localhost:5031\/api\/v1\/files\/serve\/([^"'\s\)]+)/g, '/api/files/serve/$1')
+                .replace(/http:\/\/localhost:5000\/api\/v1\/files\/serve\/([^"'\s\)]+)/g, '/api/files/serve/$1')
                 .replace(/(https?:\/\/[^\/]+)?\/api\/v1\/files\/serve\/([^"'\s\)]+)/g, '/api/files/serve/$2')
             } else if (typeof value === 'object') {
               fixed[key] = fixUrlsInObject(value)
@@ -177,7 +177,7 @@ export function RrwebSessionViewer({ events, sessionId, videoSrc, videoType, onC
             const images = doc.querySelectorAll('img')
             images.forEach((img: HTMLImageElement) => {
               // Skip if image is already loaded successfully and not from backend
-              if (img.complete && img.naturalHeight > 0 && !img.src.includes('localhost:5031') && !img.src.startsWith('blob:')) return
+              if (img.complete && img.naturalHeight > 0 && !img.src.includes('localhost:5000') && !img.src.startsWith('blob:')) return
               if (img.src.startsWith('data:')) return
               
               // Handle broken blob URLs - extract filename from error context or alt text
@@ -312,9 +312,9 @@ export function RrwebSessionViewer({ events, sessionId, videoSrc, videoType, onC
                 filename = urlParts[urlParts.length - 1].split('?')[0].split('#')[0]
                 
                 // Check if this is a backend API URL that needs to be proxied
-                const isBackendApiUrl = srcUrl.includes('/api/v1/files/serve/') || srcUrl.includes('localhost:5031')
+                const isBackendApiUrl = srcUrl.includes('/api/v1/files/serve/') || srcUrl.includes('localhost:5000')
                 // Check if it's already using our Next.js proxy
-                const isAlreadyProxy = srcUrl.includes('/api/files/serve/') && !srcUrl.includes('localhost:5031')
+                const isAlreadyProxy = srcUrl.includes('/api/files/serve/') && !srcUrl.includes('localhost:5000')
                 
                 // If it's a backend API URL OR looks like a filename that's not from our proxy, fix it
                 if (filename && filename.includes('.') && (isBackendApiUrl || (!isAlreadyProxy && !srcUrl.includes('/api/files/serve/')))) {

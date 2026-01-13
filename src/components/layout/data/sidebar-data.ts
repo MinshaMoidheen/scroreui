@@ -120,17 +120,20 @@ export const getSidebarData = (): SidebarData => {
 
   // Filter menu items based on user role
   const getMenuItemsForRole = (role: string) => {
-    if (role === 'teacher') {
-      // For teachers, show only My Folders (userFolders), My Meetings, and Recordings
+    // Normalize role to lowercase for comparison
+    const normalizedRole = role?.toLowerCase()?.trim()
+    
+    if (normalizedRole === 'teacher') {
+      // For teachers, show only My Folders and My Meetings
       return allMenuItems.filter(item => 
-       item.title === 'My Folders' || item.title === 'My Meetings' 
+        item.title === 'My Folders' || item.title === 'My Meetings'
       )
-    } else if (role === 'student') {
+    } else if (normalizedRole === 'student') {
       // For students, show limited items (similar to teachers for now)
       return allMenuItems.filter(item => 
         item.title === 'My Folders' || item.title === 'My Meetings' || item.title === 'Recordings'
       )
-    } else if (role === 'superadmin') {
+    } else if (normalizedRole === 'superadmin') {
       // For superadmin, show all items except My Folders and My Meetings, including Student Registration
       return allMenuItems.filter(item => item.title !== 'My Folders' && item.title !== 'My Meetings')
     } else {

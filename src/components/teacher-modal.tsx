@@ -55,7 +55,8 @@ export function TeacherModal({
   const [isSubmitting, setIsSubmitting] = useState(false)
   
   // Get existing teachers to check for duplicate emails
-  const { data: existingTeachers = [] } = useGetTeachersQuery()
+  const { data: teachersData } = useGetTeachersQuery()
+  const existingTeachers = teachersData?.users || []
 
   const form = useForm<TeacherFormValues>({
     resolver: zodResolver(teacherFormSchema),

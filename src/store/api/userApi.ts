@@ -86,7 +86,7 @@ export const userApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ['User'],
     }),
-    // Teacher-specific endpoints (users with role 'user' - teachers are users with role 'user' in this system)
+    // Teacher-specific endpoints (users with role 'teacher')
     getTeachers: builder.query<GetUsersResponse, { limit?: number; offset?: number } | void>({
       query: (params) => {
         const queryParams = new URLSearchParams()
@@ -111,7 +111,7 @@ export const userApi = baseApi.injectEndpoints({
     }),
     createTeacher: builder.mutation<{ message: string; user: User }, Omit<CreateUserRequest, 'role'>>({
       query: (teacher) => {
-        // Explicitly construct body with only required fields and set role to 'user'
+        // Explicitly construct body with only required fields and set role to 'teacher'
         return {
           url: USER_URL,
           method: 'POST',
@@ -119,7 +119,7 @@ export const userApi = baseApi.injectEndpoints({
             username: teacher.username,
             email: teacher.email,
             password: teacher.password,
-            role: 'user' as const,
+            role: 'teacher' as const,
           },
         }
       },

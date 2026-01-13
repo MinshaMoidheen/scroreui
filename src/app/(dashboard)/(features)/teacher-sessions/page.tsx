@@ -36,7 +36,7 @@ import {
   useGetTeacherSessionsQuery,
   type TeacherSession
 } from '@/store/api/teacherSessionApi'
-import { useGetTeachersQuery } from '@/store/api/userApi'
+import { useGetTeachersQuery, type User as UserType } from '@/store/api/userApi'
 import { RrwebSessionViewer } from '@/components/rrweb-session-viewer'
 
 import { useLogoutUserMutation } from '@/store/api/authApi'
@@ -73,7 +73,8 @@ export default function TeacherSessionsPage() {
   console.log(setFilterCourseClass, setFilterSection, setFilterSubject,setFilterActive)
 
   // Fetch dropdown data
-  const { data: teachers = [] } = useGetTeachersQuery()
+  const { data: teachersData } = useGetTeachersQuery()
+  const teachers: UserType[] = teachersData?.users || []
  
 
   // Build query params

@@ -23,7 +23,30 @@ const baseQueryWithReauth: BaseQueryFn<
   unknown,
   FetchBaseQueryError
 > = async (args, api, extraOptions) => {
-  const result = await baseQuery(args, api, extraOptions)
+  // Check if this is an auth endpoint that should use Next.js API route
+  let queryArgs = args
+  if (typeof args === 'object' && 'url' in args) {
+    const url = args.url as string
+    // If URL starts with /api/auth, use current origin instead of BASE_URL
+    if (url.startsWith('/api/auth')) {
+      const authBaseQuery = fetchBaseQuery({
+        baseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+        credentials: 'include',
+        prepareHeaders: (headers) => {
+          if (typeof window !== 'undefined') {
+            const token = localStorage.getItem('accessToken')
+            if (token) {
+              headers.set('authorization', `Bearer ${token}`)
+            }
+          }
+          return headers
+        },
+      })
+      return authBaseQuery(args, api, extraOptions)
+    }
+  }
+  
+  const result = await baseQuery(queryArgs, api, extraOptions)
   
   // Check if the response is 401 (Unauthorized)
   if (result.error && result.error.status === 401) {

@@ -109,13 +109,26 @@ export function TeacherAuthForm({ className, ...props }: TeacherAuthFormProps) {
         subjectId: data.subjectId,
       }).unwrap()
 
+      console.log('Teacher login result:', result)
+
       // Block sign-in if the authenticated account is not a teacher
-      const role = result?.user?.role?.toLowerCase()
-      
-      if (role !== 'teacher') {
+      // Only users with role 'teacher' can login through this form
+      if (!result?.user) {
         toast({
           title: 'Access Denied',
-          description: 'Only users with teacher role can login here. Please use the appropriate login page.',
+          description: 'Invalid user data received. Please try again.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      const role = result.user.role?.toLowerCase()?.trim()
+      
+      // Strictly enforce that only role 'teacher' can login here
+      if (!role || role !== 'teacher') {
+        toast({
+          title: 'Access Denied',
+          description: `Only users with role 'teacher' can login here. Your account has role '${result.user.role || 'unknown'}'. Please use the appropriate login page.`,
           variant: 'destructive',
         })
         return
