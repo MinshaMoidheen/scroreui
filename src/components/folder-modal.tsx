@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -22,7 +22,6 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-
 import {
   Select,
   SelectContent,
@@ -38,10 +37,11 @@ import { useGetSubjectsQuery } from '@/store/api/subjectApi'
 import { useGetTeachersQuery } from '@/store/api/userApi'
 import { Folder as FolderType } from '@/store/api/folderApi'
 
+// Update schema to allow only one user
 const folderFormSchema = z.object({
   folderName: z.string().min(1, 'Folder name is required'),
   parent: z.string().optional(),
-  allowedUsers: z.array(z.string()).min(1, 'At least one user must be selected'),
+  allowedUsers: z.array(z.string()).min(1, 'At least one user must be selected').max(1, 'Only one user can be selected'), // Changed to max 1
   courseClass: z.string().optional(),
   section: z.string().optional(),
   subject: z.string().optional(),
@@ -94,69 +94,85 @@ export function FolderModal({
   const { data: courseClasses = [] } = useGetCourseClassesQuery()
   const { data: allSections = [] } = useGetSectionsQuery()
   const { data: subjects = [] } = useGetSubjectsQuery()
-  const { data: teachersData } = useGetTeachersQuery({ limit: 0, offset: 0 })
-  const teachers = teachersData?.users || []
+  const { data: teachers = [] } = useGetTeachersQuery()
+
+  // Debugging: Log teachers data
+  console.log('Teachers data:', teachers);
+
+  // Extract and filter teachers from the API response
+  const validTeachers = Array.isArray(teachers?.users)
+    ? teachers?.users.filter((user) => user.role === 'teacher')
+    : [];
+
+  console.log('Valid Teachers:', validTeachers);
 
   // Watch the selected course class to filter sections
   const selectedCourseClassId = form.watch('courseClass')
   
-  // Filter sections based on selected class (show all if no class selected)
-  const sections = useMemo(() => {
-    if (!selectedCourseClassId) {
-      return allSections
-    }
-    return allSections.filter(section => 
-      section.courseClass?._id === selectedCourseClassId
-    )
-  }, [allSections, selectedCourseClassId])
+  // Filter sections based on selected class
+  const sections = allSections.filter(section => 
+    selectedCourseClassId && section.courseClass?._id === selectedCourseClassId
+  )
 
-  // Reset section and subject when course class changes
+  // Reset section when course class changes
   useEffect(() => {
     if (selectedCourseClassId) {
-      const currentSection = form.getValues('section')
-      // Check if current section belongs to the selected class
-      const sectionBelongsToClass = currentSection && sections.some(s => s._id === currentSection)
-      
-      if (!sectionBelongsToClass) {
+      // Only reset if the current section doesn't belong to the selected class
+      const currentSectionId = form.getValues('section')
+      if (currentSectionId) {
+        const currentSection = allSections.find(s => s._id === currentSectionId)
+        if (currentSection?.courseClass?._id !== selectedCourseClassId) {
+          form.setValue('section', '')
+        }
+      } else {
         form.setValue('section', '')
-        form.setValue('subject', '')
       }
-    } else {
-      // If no class selected, clear section and subject
-      form.setValue('section', '')
-      form.setValue('subject', '')
     }
-  }, [selectedCourseClassId, form, sections])
+  }, [selectedCourseClassId, form, allSections])
 
   // Reset form when folder changes
   useEffect(() => {
     if (folder) {
+      // Convert allowedUsers to array format
+      const allowedUsersArray = Array.isArray(folder.allowedUsers) 
+        ? folder.allowedUsers.map((user: any) => 
+            typeof user === 'object' && user !== null && user.username 
+              ? user.username 
+              : String(user)
+          )
+        : folder.allowedUsers && typeof folder.allowedUsers === 'object' && 'username' in folder.allowedUsers
+          ? [(folder.allowedUsers as any).username]
+          : folder.allowedUsers
+            ? [String(folder.allowedUsers)]
+            : []
+      
       form.reset({
         folderName: folder.folderName,
         parent: currentParentFolder ? (folder.parent || 'none') : undefined,
-        allowedUsers: Array.isArray(folder.allowedUsers) 
-          ? folder.allowedUsers.map((user: any) => 
-              typeof user === 'object' && user !== null && user.username 
-                ? user.username 
-                : String(user)
-            )
-          : [],
+        allowedUsers: allowedUsersArray,
         courseClass: folder.courseClass?._id || '',
         section: folder.section?._id || '',
         subject: folder.subject?._id || '',
       })
     } else if (isCreatingSubfolder && parentFolderData) {
       // Pre-fill from parent folder when creating subfolder
+      // Convert allowedUsers to array format
+      const allowedUsersArray = Array.isArray(parentFolderData.allowedUsers)
+        ? parentFolderData.allowedUsers.map((user: any) =>
+            typeof user === 'object' && user !== null && user.username
+              ? user.username
+              : String(user)
+          )
+        : parentFolderData.allowedUsers && typeof parentFolderData.allowedUsers === 'object' && 'username' in parentFolderData.allowedUsers
+          ? [(parentFolderData.allowedUsers as any).username]
+          : parentFolderData.allowedUsers
+            ? [String(parentFolderData.allowedUsers)]
+            : []
+      
       form.reset({
         folderName: '',
         parent: currentParentFolder || '',
-        allowedUsers: Array.isArray(parentFolderData.allowedUsers)
-          ? parentFolderData.allowedUsers.map((user: any) =>
-              typeof user === 'object' && user !== null && user.username
-                ? user.username
-                : String(user)
-            )
-          : [],
+        allowedUsers: allowedUsersArray,
         courseClass: parentFolderData.courseClass?._id || '',
         section: parentFolderData.section?._id || '',
         subject: parentFolderData.subject?._id || '',
@@ -258,37 +274,44 @@ export function FolderModal({
             <FormField
               control={form.control}
               name="allowedUsers"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Allowed Users</FormLabel>
-                  <div className={`space-y-2 max-h-40 overflow-y-auto border rounded-md p-3 ${areFieldsDisabled ? 'opacity-60' : ''}`}>
-                    {teachers.map((teacher) => (
-                      <div key={teacher._id} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`user-${teacher._id}`}
-                          checked={field.value?.includes(teacher.username) || false}
-                          disabled={areFieldsDisabled}
-                          onCheckedChange={(checked) => {
-                            const currentUsers = field.value || []
-                            if (checked) {
-                              field.onChange([...currentUsers, teacher.username])
-                            } else {
-                              field.onChange(currentUsers.filter(user => user !== teacher.username))
-                            }
-                          }}
-                        />
-                        <label
-                          htmlFor={`user-${teacher._id}`}
-                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                        >
-                          {teacher.username}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
+              render={({ field }) => {
+                // Get the currently selected user (first in array or empty string)
+                const selectedUser = field.value?.[0] || '';
+                
+                return (
+                  <FormItem>
+                    <FormLabel>Allowed User (Select One)</FormLabel>
+                    <div className={`space-y-2 max-h-40 overflow-y-auto border rounded-md p-3 ${areFieldsDisabled ? 'opacity-60' : ''}`}>
+                      {validTeachers?.map((teacher) => (
+                        <div key={teacher?._id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`user-${teacher?._id}`}
+                            checked={selectedUser === teacher?.username}
+                            // disabled={areFieldsDisabled}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                // When checked, set array with only this user
+                                field.onChange([teacher?.username])
+                              } else {
+                                // When unchecked (shouldn't happen with single selection)
+                                field.onChange([])
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor={`user-${teacher?._id}`}
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                          >
+                            {teacher?.username}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                    <FormMessage />
+                    <p className="text-xs text-muted-foreground mt-1">Only one user can be selected</p>
+                  </FormItem>
+                )
+              }}
             />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -301,7 +324,7 @@ export function FolderModal({
                     <Select 
                       onValueChange={field.onChange} 
                       value={field.value}
-                      disabled={areFieldsDisabled}
+                      // disabled={areFieldsDisabled}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -330,19 +353,25 @@ export function FolderModal({
                     <Select 
                       onValueChange={field.onChange} 
                       value={field.value}
-                      disabled={areFieldsDisabled}
+                      disabled={!selectedCourseClassId}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select section" />
+                          <SelectValue placeholder={selectedCourseClassId ? "Select section" : "Select class first"} />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {sections.map((section) => (
-                          <SelectItem key={section._id} value={section._id}>
-                            {section.name}
-                          </SelectItem>
-                        ))}
+                        {sections.length > 0 ? (
+                          sections.map((section) => (
+                            <SelectItem key={section._id} value={section._id}>
+                              {section.name || 'N/A'}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                            {selectedCourseClassId ? 'No sections available' : 'Select a course class first'}
+                          </div>
+                        )}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -359,7 +388,7 @@ export function FolderModal({
                     <Select 
                       onValueChange={field.onChange} 
                       value={field.value}
-                      disabled={areFieldsDisabled}
+                      // disabled={areFieldsDisabled}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -385,7 +414,7 @@ export function FolderModal({
                 Cancel
               </Button>
               <Button type="submit" disabled={isLoading || isSubmitting}>
-                {isLoading || isSubmitting
+                {(isLoading || isSubmitting)
                   ? 'Saving...'
                   : folder
                   ? 'Update Folder'
